@@ -1,0 +1,12 @@
+node_modules/
+dist/
+dev-dist/
+.vercel/
+*.local
+.DS_Store
+Thumbs.db
+# Dev-only datasets sent from the phone ("Send to laptop") — raw tap audio stays on this machine
+data/
+# Original copy of the brief (verbatim copy lives in docs/BRIEF.md)
+HUM_SUPER_PROMPT.md
+__pycache__/

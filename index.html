@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#050807" />
+    <meta name="description" content="Hum turns any table into a touch surface using only your phone's microphone and on-device machine learning." />
+    <title>Hum</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <button id="logo" class="logo" type="button" aria-label="Hum. Long-press for the debug panel.">
+          <svg viewBox="0 0 32 32" aria-hidden="true">
+            <circle cx="16" cy="16" r="3.2" fill="currentColor" />
+            <path d="M10.3 10.3a8 8 0 0 0 0 11.4M21.7 10.3a8 8 0 0 1 0 11.4" />
+            <path d="M6 6a14 14 0 0 0 0 20M26 6a14 14 0 0 1 0 20" opacity="0.55" />
+          </svg>
+          <span>Hum</span>
+        </button>
+        <div class="status">
+          <span id="micPill" class="pill">MIC OFF</span>
+          <span id="floorReadout" class="readout">FLOOR —</span>
+        </div>
+      </header>
+
+      <section id="start" class="start">
+        <p class="eyebrow">ACOUSTIC TOUCH · ON-DEVICE</p>
+        <h1>Turn this table into buttons.</h1>
+        <p class="lead">Hum listens for knocks on the table through the microphone and learns where and how you tap. Nothing is uploaded.</p>
+        <ol class="steps">
+          <li>Lay the phone <b>flat and face-up</b> on a hard table.</li>
+          <li>Press start and allow the microphone.</li>
+          <li>Teach Hum each pad by tapping it 8 times.</li>
+        </ol>
+        <button id="startBtn" class="btn primary big" type="button">Start listening</button>
+        <p id="startError" class="error" role="alert" hidden></p>
+      </section>
+
+      <section id="lab" hidden>
+        <div class="instrument">
+          <canvas id="scope" aria-label="Live microphone level: green is sound, cyan dashes the noise floor, amber dashes the tap threshold"></canvas>
+          <div id="map" class="map"></div>
+        </div>
+        <nav class="tabs" role="tablist">
+          <button type="button" role="tab" data-tab="train">Train</button>
+          <button type="button" role="tab" data-tab="test">Test</button>
+          <button type="button" role="tab" data-tab="play">Play</button>
+        </nav>
+        <div id="panel" class="panel"></div>
+      </section>
+
+      <footer class="foot">Assistive aid, not a medical device · Audio never leaves this phone</footer>
+    </div>
+    <div id="debug" class="debug" role="dialog" aria-label="Debug panel" hidden></div>
+    <div id="toast" class="toast" role="status" hidden></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
