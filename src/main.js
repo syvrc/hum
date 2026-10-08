@@ -8,7 +8,8 @@ import '@fontsource/ibm-plex-sans/400.css';
 import '@fontsource/ibm-plex-sans/600.css';
 import './styles.css';
 
-import { app, loadState, handleTap, go, setSetting, resetSettings } from './app.js';
+import { app, bus, loadState, handleTap, go, setSetting, resetSettings } from './app.js';
+import { initLink, phoneLink } from './phoneLink.js';
 import { keepScreenOn } from './platform.js';
 import { Scope } from './ui/scope.js';
 import { TableMap } from './ui/tablemap.js';
@@ -21,9 +22,10 @@ import { wizard } from './screens/wizard.js';
 import { lab, copyReport, sendDataset } from './screens/lab.js';
 import { access } from './screens/access.js';
 import { phrases } from './screens/phrases.js';
+import { remote } from './screens/remote.js';
 import { warmUpSpeech } from './voice.js';
 
-app.screens = { home, wizard, lab, access, phrases };
+app.screens = { home, wizard, lab, access, phrases, remote };
 app.map = new TableMap($('#map'));
 app.scope = new Scope($('#scope'), app.engine);
 
@@ -48,6 +50,7 @@ async function start() {
     app.scope.start();
     updateStatus();
     setInterval(updateStatus, 500);
+    initLink(); // reconnect to the Companion (or join the room from a scanned QR code)
     // First run (no table yet) goes straight into setup; otherwise straight to the Access Pad.
     go(app.profile ? (app.model ? 'access' : 'home') : 'wizard', { mode: 'new' });
   } catch (e) {
@@ -104,6 +107,15 @@ function updateStatus() {
   const det = e.detector;
   $('#floorReadout').textContent = det ? `FLOOR ${det.floorDb.toFixed(0)} dB` : 'FLOOR —';
 }
+
+// Small companion-link indicator next to the floor readout.
+bus.addEventListener('link', () => {
+  const el = $('#linkReadout');
+  const s = phoneLink.status;
+  el.hidden = s === 'off';
+  el.textContent = s === 'connected' ? '· LINK ✓' : s === 'offline' ? '· LINK ✗' : '· LINK …';
+  el.className = `readout ${s === 'connected' ? 'ok' : s === 'offline' ? 'bad' : 'warn'}`;
+});
 
 // ---------------------------------------------------------------- debug --------
 

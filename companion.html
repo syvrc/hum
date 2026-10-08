@@ -4,16 +4,86 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#050807" />
+    <meta name="description" content="Hum Companion: caregiver feed, SOS alerts and the Desk Remote media player for the Hum phone." />
     <title>Hum Companion</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   </head>
-  <body>
-    <main class="companion">
-      <p class="eyebrow">HUM · COMPANION</p>
-      <h1>Caregiver feed &amp; Desk Remote</h1>
-      <p class="lead">This page will pair with the Hum phone (room code + QR), show every phrase it speaks, take over the screen on SOS, and play your media when you knock.</p>
-      <p class="muted">Arrives in Phase 4. <a href="/">Open the phone app →</a></p>
-    </main>
+  <body class="companion-page">
+    <div id="arm" class="arm-overlay" role="dialog" aria-label="Arm sound and alerts">
+      <div>
+        <p class="eyebrow">HUM · COMPANION</p>
+        <h1>Caregiver feed, SOS alerts &amp; Desk Remote</h1>
+        <p class="lead">Browsers only allow sound after a click. Arm this page so an SOS can sound the alarm.</p>
+        <button id="armBtn" class="btn primary big" type="button">Click to arm sound &amp; alerts</button>
+      </div>
+    </div>
+
+    <div class="c-wrap">
+      <header class="topbar">
+        <a class="logo" href="/" aria-label="Open the Hum phone app">
+          <svg viewBox="0 0 32 32" aria-hidden="true">
+            <circle cx="16" cy="16" r="3.2" fill="currentColor" />
+            <path d="M10.3 10.3a8 8 0 0 0 0 11.4M21.7 10.3a8 8 0 0 1 0 11.4" />
+            <path d="M6 6a14 14 0 0 0 0 20M26 6a14 14 0 0 1 0 20" opacity="0.55" />
+          </svg>
+          <span>Hum <small class="muted">Companion</small></span>
+        </a>
+        <span id="linkPill" class="pill">STARTING…</span>
+      </header>
+
+      <div class="c-grid">
+        <section class="c-col">
+          <div class="card pair">
+            <p class="eyebrow">PAIR THE HUM PHONE</p>
+            <div class="pair-row">
+              <div id="qr" class="qr" aria-label="QR code that opens Hum with this room code"></div>
+              <div>
+                <p class="muted small">Room code</p>
+                <div id="roomCode" class="room-code mono">—</div>
+                <p class="small">Scan with the Hum phone's camera, or in Hum tap <b>Companion → Connect</b> and type the code.</p>
+                <button id="newCode" class="btn small" type="button">New code</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <p class="eyebrow">CAREGIVER FEED</p>
+            <ol id="feed" class="feed" aria-live="polite"><li class="muted empty">Phrases spoken by Hum appear here.</li></ol>
+          </div>
+        </section>
+
+        <section class="c-col" id="mediaSection">
+          <div class="card media">
+            <p class="eyebrow">DESK REMOTE · MEDIA</p>
+            <div class="now">
+              <div id="nowState" class="now-state" aria-hidden="true">⏸</div>
+              <div>
+                <div id="nowTitle" class="now-title">Nothing loaded</div>
+                <div class="vol"><span class="muted small">volume</span><span class="bar ok"><i id="volBar" style="width: 80%"></i></span><span id="volVal" class="mono small">80%</span></div>
+              </div>
+            </div>
+            <video id="player" playsinline controls></video>
+            <label id="drop" class="drop">
+              <input id="files" type="file" accept="audio/*,video/*" multiple hidden />
+              <b>Drop music or video files here</b><span class="muted small">or click to choose · files stay on this computer</span>
+            </label>
+            <ol id="playlist" class="playlist"></ol>
+          </div>
+        </section>
+      </div>
+      <footer class="foot">Hum is an assistive aid, not a medical device. Only short text messages travel between the devices — never audio.</footer>
+    </div>
+
+    <div id="sos" class="sos-overlay" role="alertdialog" aria-labelledby="sosTitle" hidden>
+      <div class="sos-box">
+        <div id="sosTitle" class="sos-title">SOS</div>
+        <p id="sosText" class="sos-text">Help needed</p>
+        <p id="sosTime" class="mono"></p>
+        <button id="ackBtn" class="btn big sos-ack" type="button">Acknowledge — help is coming</button>
+        <button id="sosClose" class="btn" type="button" hidden>Close</button>
+      </div>
+    </div>
+    <div id="flash" class="cmd-flash" aria-hidden="true"></div>
     <script type="module" src="/src/companion.js"></script>
   </body>
 </html>

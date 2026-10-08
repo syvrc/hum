@@ -1,6 +1,8 @@
 // Home: the active table profile, other saved tables, and setup / import.
 
-import { app, activate, deleteProfile, saveProfile, go } from '../app.js';
+import { app, activate, deleteProfile, saveProfile, go, bus } from '../app.js';
+import { phoneLink, connect, disconnect } from '../phoneLink.js';
+import { normaliseCode } from '../link.js';
 import { countFor, NONE, exportProfile, importProfile, hydrate } from '../profile.js';
 import { downloadJson } from '../report.js';
 import { $, $$, esc, pct, toast, ago } from '../ui/dom.js';
@@ -11,7 +13,33 @@ export const home = {
 
   mount(el) {
     this.el = el;
+    this.onLink = () => this.render();
+    bus.addEventListener('link', this.onLink);
     this.render();
+  },
+
+  unmount() {
+    bus.removeEventListener('link', this.onLink);
+  },
+
+  companionHtml() {
+    const s = phoneLink.status;
+    const statusText = !phoneLink.code
+      ? 'Not paired.'
+      : s === 'connected'
+        ? `Connected · room ${phoneLink.code}`
+        : s === 'offline'
+          ? `Room ${phoneLink.code} · offline (no internet?)`
+          : `Room ${phoneLink.code} · waiting for the Companion page…`;
+    return `<div class="card">
+        <div class="eyebrow">COMPANION · CAREGIVER FEED · SOS ALERTS · DESK REMOTE</div>
+        <p class="mono small ${s === 'connected' ? 'ok' : ''}">${esc(statusText)}</p>
+        <div class="row">
+          ${phoneLink.code ? '<button class="btn" data-act="unpair">Unpair</button>' : '<button class="btn" data-act="pair">Pair with a code</button>'}
+          <button class="btn" data-act="remote" ${app.model ? '' : 'disabled'}>Desk Remote →</button>
+        </div>
+        <p class="muted small">Open <span class="mono">${esc(location.host)}/companion.html</span> on a laptop, then scan its QR code with this phone's camera or type its code here.</p>
+      </div>`;
   },
 
   render() {
@@ -50,6 +78,7 @@ export const home = {
         <p class="eyebrow">HUM · YOUR TABLES</p>
       </div>
       ${active}
+      ${this.companionHtml()}
       <button class="btn ${p ? '' : 'primary'} big" data-act="new">+ Set up a new table</button>
       ${list}
       <label class="btn small file-btn">Import a table profile (.json)<input type="file" accept="application/json,.json" hidden></label>
@@ -67,6 +96,20 @@ export const home = {
             break;
           case 'lab':
             go('lab');
+            break;
+          case 'remote':
+            go('remote');
+            break;
+          case 'pair': {
+            const code = normaliseCode(prompt('Room code shown on the Companion page'));
+            if (code) connect(code);
+            else toast('That is not a room code — it has 4–8 letters/numbers.');
+            this.render();
+            break;
+          }
+          case 'unpair':
+            await disconnect();
+            this.render();
             break;
           case 'new':
             go('wizard', { mode: 'new' });

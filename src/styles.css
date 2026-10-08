@@ -241,3 +241,10 @@ input.text:focus { outline: 3px solid var(--cyan); outline-offset: 1px; }
 .settings-card { display: grid; gap: 12px; }
 .switch { display: flex; gap: 12px; align-items: flex-start; cursor: pointer; }
 .switch input { width: 26px; height: 26px; margin: 2px 0 0; accent-color: var(--signal); flex: none; }
+
+/* --- Phase 4: companion link + Desk Remote on the phone ----------------------- */
+.status-row { display: flex; gap: 6px; }
+.remote-tile .tile-phrase { font-size: 26px; }
+.remote-maps { display: grid; gap: 8px; margin-top: 10px; }
+.remote-map { display: grid; grid-template-columns: 96px 1fr; gap: 8px; align-items: center; }
+details.card summary { cursor: pointer; font-weight: 600; min-height: 32px; }
