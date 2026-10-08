@@ -11,7 +11,7 @@
   <body>
     <div id="app">
       <header class="topbar">
-        <button id="logo" class="logo" type="button" aria-label="Hum. Long-press for the debug panel.">
+        <button id="logo" class="logo" type="button" aria-label="Hum — your tables. Long-press for the debug panel.">
           <svg viewBox="0 0 32 32" aria-hidden="true">
             <circle cx="16" cy="16" r="3.2" fill="currentColor" />
             <path d="M10.3 10.3a8 8 0 0 0 0 11.4M21.7 10.3a8 8 0 0 1 0 11.4" />
@@ -32,24 +32,17 @@
         <ol class="steps">
           <li>Lay the phone <b>flat and face-up</b> on a hard table.</li>
           <li>Press start and allow the microphone.</li>
-          <li>Teach Hum each pad by tapping it 8 times.</li>
+          <li>Teach Hum each pad by tapping it 8 times — about a minute.</li>
         </ol>
         <button id="startBtn" class="btn primary big" type="button">Start listening</button>
         <p id="startError" class="error" role="alert" hidden></p>
       </section>
 
-      <section id="lab" hidden>
-        <div class="instrument">
-          <canvas id="scope" aria-label="Live microphone level: green is sound, cyan dashes the noise floor, amber dashes the tap threshold"></canvas>
-          <div id="map" class="map"></div>
-        </div>
-        <nav class="tabs" role="tablist">
-          <button type="button" role="tab" data-tab="train">Train</button>
-          <button type="button" role="tab" data-tab="test">Test</button>
-          <button type="button" role="tab" data-tab="play">Play</button>
-        </nav>
-        <div id="panel" class="panel"></div>
-      </section>
+      <div id="instrument" class="instrument" hidden>
+        <canvas id="scope" aria-label="Live microphone level: green is sound, cyan dashes the noise floor, amber dashes the tap threshold"></canvas>
+        <div id="map" class="map"></div>
+      </div>
+      <main id="screen" class="panel"></main>
 
       <footer class="foot">Assistive aid, not a medical device · Audio never leaves this phone</footer>
     </div>

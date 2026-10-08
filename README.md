@@ -7,7 +7,7 @@
 
 ## Status
 
-Phase 0 (spike): microphone → AudioWorklet → onset detection → spectral features → k-NN classifier, with a training screen and a randomised on-device accuracy test. Real accuracy numbers will be published here once measured on a phone.
+Working: microphone → AudioWorklet → onset detection → spectral features → k-NN classifier; a ~1-minute setup wizard (noise calibration, per-pad training, "not a command" sounds, leave-one-out self-check with plain-English fixes); saved table profiles; a randomised on-device accuracy test. Real accuracy numbers will be published here once measured on a phone.
 
 ## How it works (short version)
 

@@ -31,7 +31,7 @@ function decode(b64) {
 for (const file of files) {
   const ds = JSON.parse(fs.readFileSync(file, 'utf8'));
   console.log(`\n=== ${path.basename(file)} ===`);
-  console.log(`preset ${ds.preset} · pads ${ds.pads.join(', ')} · ${ds.taps.length} taps · recorded with feature v${ds.featureVersion}, analysing with v${FEATURE_VERSION}`);
+  console.log(`${ds.profile?.name || ds.preset} · pads ${ds.pads.join(', ')} · ${ds.taps.length} taps · recorded with feature v${ds.featureVersion}, analysing with v${FEATURE_VERSION}`);
   console.log(`device: ${ds.device?.sampleRate} Hz, ${ds.device?.channels} ch, motion ${ds.device?.motion} · ${ds.device?.ua}`);
 
   const taps = ds.taps.map((t) => {
@@ -41,7 +41,8 @@ for (const file of files) {
   });
   const train = taps.filter((t) => t.set === 'train');
   const test = taps.filter((t) => t.set === 'test');
-  const labels = ds.pads;
+  // "__none" = the "not a command" class (sounds to ignore), present when recorded.
+  const labels = taps.some((t) => t.truth === '__none') ? [...ds.pads, '__none'] : ds.pads;
 
   const stereoReal = taps.filter((t) => t.info.stereoReal).length;
   console.log(`stereo really different on ${stereoReal}/${taps.length} taps · accel present on ${taps.filter((t) => t.accel).length}/${taps.length} · clipped taps ${taps.filter((t) => t.info.clipped > 0).length}/${taps.length}`);

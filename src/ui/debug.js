@@ -45,8 +45,8 @@ export class DebugPanel {
   }
 
   render() {
-    const { engine, state } = this.app;
-    const values = { ...engine.detector?.opts, ...state.settings };
+    const { engine } = this.app;
+    const values = { ...engine.detector?.opts, ...this.app.settings };
     const sliders = SLIDERS.map(
       (s) => `<label class="dbg-slider"><span>${esc(s.label)} <b data-val="${s.key}">${values[s.key]}</b></span>
         <input type="range" min="${s.min}" max="${s.max}" step="${s.step}" value="${values[s.key]}" data-group="${s.group}" data-key="${s.key}"></label>`,
@@ -90,7 +90,7 @@ export class DebugPanel {
   }
 
   updateLive() {
-    const { engine, motion, state } = this.app;
+    const { engine, motion, profile, model } = this.app;
     const det = engine.detector;
     const live = this.root.querySelector('#dbgLive');
     if (live) {
@@ -98,15 +98,15 @@ export class DebugPanel {
         `rate ${engine.sr || '–'} Hz · channels ${engine.channels ?? '–'} · ctx ${engine.ctx?.state || '–'} · chunks ${engine.chunkCount}`,
         `level ${fmt(det?.lastDb)} dB · floor ${fmt(det?.floorDb)} dB · threshold ${fmt(det?.thresholdDb)} dB`,
         `mic latency (reported) ${fmt(engine.inputLatencyMs)} ms · base ${fmt((engine.ctx?.baseLatency || 0) * 1000)} ms · motion ${motion.available ? 'yes' : 'no'}`,
-        `training taps ${state.samples.length} · model ${state.model ? 'ready' : 'none'}`,
+        `table ${profile ? `"${profile.name}" · ${profile.samples.length} example taps` : 'none'} · model ${model ? 'ready' : 'none'}`,
       ].join('\n');
     }
     const tapEl = this.root.querySelector('#dbgTap');
-    const t = state.lastTap;
+    const t = this.app.lastTap;
     if (tapEl) {
       tapEl.textContent = t
         ? [
-            `${t.mode}: ${t.pred ? `${t.pred} conf ${fmt(t.confidence, 2)} ratio ${fmt(t.distRatio, 2)}${t.rejected ? ' (NOT SURE)' : ''}` : t.padId || ''}`,
+            `${t.screen}: ${t.pred ? `${t.pred} [${t.status}] conf ${fmt(t.confidence, 2)} ratio ${fmt(t.distRatio, 2)}` : `recorded as ${t.padId}`}`,
             `latency ${fmt(t.latencyMs, 0)} ms (onset → on screen)`,
             `peak ${fmt(t.info.peakDb)} dBFS${t.info.clipped ? ` (CLIPPED ×${t.info.clipped})` : ''} · centroid ${fmt(t.info.centroidHz, 0)} Hz · attack ${fmt(t.info.attackMs, 2)} ms · decay ${fmt(t.info.decaySlope, 2)} dB/ms`,
             `stereo ${t.info.stereoReal ? `REAL (delay ${fmt(t.info.delayMs, 3)} ms)` : `no (${t.info.channels} ch)`} · accel ${t.accel ? t.accel.map((v) => fmt(v, 2)).join(',') : 'none'}`,
