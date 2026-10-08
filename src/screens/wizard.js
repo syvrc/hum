@@ -9,7 +9,7 @@
 
 import { app, go, saveProfile, retrain } from '../app.js';
 import { PRESETS, ZONES, TAP_TYPES, makePad } from '../pads.js';
-import { NONE, TRAIN_PER_PAD, MAX_PADS, MAX_NONE, newProfile, countFor, selfCheck, changePad, removePad, noneLabel } from '../profile.js';
+import { NONE, TRAIN_PER_PAD, MAX_PADS, MAX_NONE, newProfile, countFor, selfCheck, changePad, removePad, noneLabel, assignDefaultPhrases } from '../profile.js';
 import { confusionHtml } from '../ui/confusion.js';
 import { $, $$, esc, pct, toast } from '../ui/dom.js';
 import { setActiveId } from '../store.js';
@@ -369,12 +369,13 @@ export const wizard = {
     d.name = ($('#tableName', this.el).value || '').trim().slice(0, 40) || 'My table';
     d.check = { padAccuracy: this.check.padAccuracy, falseTriggers: this.check.falseTriggers, noneTotal: this.check.noneTotal, setupSeconds: this.setupSeconds, at: Date.now() };
     this.saved = true;
+    assignDefaultPhrases(d);
     await saveProfile(d);
     app.profile = d;
     retrain();
     await setActiveId(d.id);
-    toast(`Saved “${d.name}”`);
-    go('home');
+    toast(`Saved “${d.name}” — knock a pad to try it`);
+    go('access');
   },
 
   // ------------------------------------------------------------------ taps ------

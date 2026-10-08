@@ -24,9 +24,10 @@ export const home = {
           <p class="mono small muted">${p.pads.length} pads · ${p.samples.filter((s) => s.padId !== NONE).length} example taps${countFor(p, NONE) ? ` · ${countFor(p, NONE)} ignore sounds` : ''} · updated ${ago(p.updatedAt)}</p>
           <p class="mono small">self-check ${pct(p.check?.padAccuracy)}${p.lastTest ? ` · last accuracy test ${pct(p.lastTest.summary.accuracy)} (${p.lastTest.summary.n} taps)` : ''}${p.check?.setupSeconds ? ` · setup took ${p.check.setupSeconds} s` : ''}</p>
           <div class="chips">${p.pads.map((pad) => `<span class="chip static">${esc(pad.short)} <span class="mono">${countFor(p, pad.id)}</span></span>`).join('')}</div>
-          <button class="btn primary big" data-act="lab" ${app.model ? '' : 'disabled'}>Test & play →</button>
+          <button class="btn primary big" data-act="access" ${app.model ? '' : 'disabled'}>Open Access Pad →</button>
           <div class="row">
-            <button class="btn" data-act="retrain">Retrain this table</button>
+            <button class="btn" data-act="lab" ${app.model ? '' : 'disabled'}>Accuracy test &amp; play</button>
+            <button class="btn" data-act="retrain">Retrain</button>
             <button class="btn" data-act="export" data-id="${p.id}">Export</button>
           </div>
         </div>`
@@ -61,6 +62,9 @@ export const home = {
       b.addEventListener('click', async () => {
         const id = b.dataset.id;
         switch (b.dataset.act) {
+          case 'access':
+            go('access');
+            break;
           case 'lab':
             go('lab');
             break;

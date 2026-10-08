@@ -128,7 +128,7 @@ a { color: var(--cyan); }
 .chip.done { border-color: rgba(61, 255, 168, 0.5); }
 .chip.done span { color: var(--signal); }
 .field { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 12px; color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; }
-select { font: 15px var(--sans); color: var(--text); background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-height: 42px; }
+select { max-width: 100%; font: 15px var(--sans); color: var(--text); background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-height: 42px; }
 .metric { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
 .metric .num { font: 600 44px var(--mono); color: var(--signal); }
 .gate { font: 600 14px var(--mono); letter-spacing: 0.12em; padding: 4px 10px; border-radius: 6px; border: 1px solid; }
@@ -211,3 +211,33 @@ select { font: 15px var(--sans); color: var(--text); background: var(--panel-2);
 .field-block { display: grid; gap: 6px; margin: 8px 0; }
 input.text { font: 18px var(--sans); color: var(--text); background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 12px; min-height: 52px; width: 100%; }
 input.text:focus { outline: 3px solid var(--cyan); outline-offset: 1px; }
+
+/* --- Phase 2: Access Pad (accessible live mode overrides the lab look) -------- */
+.access { display: grid; gap: 12px; margin-top: 12px; }
+.access-status { font: 600 20px/1.3 var(--sans); padding: 14px 16px; border-radius: var(--radius); border: 2px solid var(--line); background: var(--panel); min-height: 60px; }
+.access-status.preview { border-color: var(--amber); color: var(--amber); }
+.access-status.speaking { border-color: var(--signal); color: var(--signal); }
+.access-status.notice { border-color: var(--amber); color: var(--amber); }
+.tiles { display: grid; grid-template-columns: 1fr 1fr; grid-template-areas: 'far far' 'left right' 'near near'; gap: 10px; }
+.tiles.no-left .zone-right, .tiles.no-right .zone-left { grid-column: 1 / -1; }
+.zone { display: grid; gap: 10px; align-content: start; }
+.zone-far { grid-area: far; grid-auto-flow: column; grid-auto-columns: 1fr; }
+.zone-near { grid-area: near; grid-auto-flow: column; grid-auto-columns: 1fr; }
+.zone-left { grid-area: left; }
+.zone-right { grid-area: right; }
+.tiles.no-left .zone-right, .tiles.no-right .zone-left { grid-row: 2; }
+.tile { display: flex; flex-direction: column; justify-content: center; gap: 6px; min-height: 120px; padding: 14px; border-radius: 16px; border: 3px solid #3a4a46; background: #0c1413; color: #ffffff; }
+.tile-phrase { font: 700 30px/1.15 var(--sans); overflow-wrap: anywhere; }
+.tile-meta { font: 600 13px var(--mono); color: #b9ccc6; letter-spacing: 0.04em; }
+.tile-hint { font: 700 15px var(--sans); }
+.tile.preview { background: var(--amber); border-color: #ffd28a; color: #111; }
+.tile.preview .tile-meta { color: #3a2a00; }
+.tile.speaking { background: var(--signal); border-color: #b5ffdc; color: #04140c; }
+.tile.speaking .tile-meta { color: #0c3a22; }
+.access-actions .btn { min-height: 52px; }
+.phrase-card { display: grid; gap: 8px; }
+.phrase-card.hit { animation: cardhit 0.7s ease-out; }
+@keyframes cardhit { from { border-color: var(--signal); box-shadow: 0 0 0 3px rgba(61, 255, 168, 0.5); } }
+.settings-card { display: grid; gap: 12px; }
+.switch { display: flex; gap: 12px; align-items: flex-start; cursor: pointer; }
+.switch input { width: 26px; height: 26px; margin: 2px 0 0; accent-color: var(--signal); flex: none; }

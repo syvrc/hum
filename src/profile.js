@@ -22,6 +22,17 @@ const DERIVED_PAD_KEYS = ['zone', 'type', 'label', 'short', 'where', 'how'];
 
 export const noneLabel = { id: NONE, label: 'IGNORE', short: 'IGNORE' };
 
+// Editable default phrases for the Access Pad, given to pads in order (brief §3.3).
+export const DEFAULT_PHRASES = ['Yes', 'No', 'I need water', "I'm in pain", 'Please come here', 'Thank you', 'Help me, please', 'I need the bathroom'];
+
+/** Give every pad without a phrase the next unused default phrase. */
+export function assignDefaultPhrases(profile) {
+  const used = new Set(profile.pads.map((p) => p.phrase).filter(Boolean));
+  const free = DEFAULT_PHRASES.filter((t) => !used.has(t));
+  for (const pad of profile.pads) if (!pad.phrase) pad.phrase = free.shift() || pad.label;
+  return profile;
+}
+
 export function newProfile(name, padIds, id = uid()) {
   const now = Date.now();
   return { v: PROFILE_VERSION, id, name, createdAt: now, updatedAt: now, pads: padIds.map((pid) => makePad(pid)), samples: [], calibration: null, check: null, lastTest: null };

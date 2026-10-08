@@ -5,18 +5,24 @@ import { AudioEngine } from './audio/engine.js';
 import { ONSET_DEFAULTS } from './audio/onset.js';
 import { extractFeatures } from './audio/features.js';
 import { Motion } from './platform.js';
-import { hydrate, dehydrate, trainModel, newProfile, uid } from './profile.js';
+import { hydrate, dehydrate, trainModel, newProfile, uid, assignDefaultPhrases } from './profile.js';
+import { setGuard, deleteClip } from './voice.js';
 import { presetPads } from './pads.js';
 import * as store from './store.js';
 import { log } from './ui/log.js';
 import { $ } from './ui/dom.js';
 
 export const DEFAULT_SETTINGS = Object.freeze({ k: 3, minConfidence: 0.2, maxDistRatio: 4 });
+export const ACCESS_DEFAULTS = Object.freeze({ confirm: true, rate: 1, voiceURI: null, chime: true, vibrate: true });
+
+/** App-wide events for other parts (e.g. the Companion link): 'phrase', … */
+export const bus = new EventTarget();
 
 export const app = {
   engine: new AudioEngine(),
   motion: new Motion(),
   settings: { ...DEFAULT_SETTINGS },
+  access: { ...ACCESS_DEFAULTS },
   detector: {},
   profiles: [], // index: [{ id, name, updatedAt, pads }]
   profile: null, // active profile (runtime form)
@@ -34,6 +40,7 @@ export const app = {
 export async function loadState() {
   const saved = await store.loadSettings();
   Object.assign(app.settings, saved.classifier || {});
+  Object.assign(app.access, saved.access || {});
   app.detector = saved.detector || {};
   app.engine.detectorOpts = { ...app.detector };
 
@@ -58,7 +65,7 @@ export async function activate(id) {
     app.model = null;
     return false;
   }
-  app.profile = hydrate(stored);
+  app.profile = assignDefaultPhrases(hydrate(stored));
   retrain();
   await store.setActiveId(id);
   log(`active profile "${app.profile.name}" (${app.profile.samples.length} taps)`);
@@ -82,6 +89,8 @@ export function saveProfileSoon(profile = app.profile) {
 }
 
 export async function deleteProfile(id) {
+  const stored = await store.loadProfile(id);
+  for (const pad of stored?.pads || []) if (pad.clipId) await deleteClip(pad.clipId); // recorded voices go too
   await store.deleteProfile(id);
   app.profiles = await store.listProfiles();
   if (app.profile?.id === id) {
@@ -100,7 +109,11 @@ export function setSetting(group, key, value) {
     app.settings[key] = value;
     if (key === 'k') retrain();
   }
-  store.saveSettings({ detector: app.detector, classifier: app.settings });
+  persistSettings();
+}
+
+export function persistSettings() {
+  store.saveSettings({ detector: app.detector, classifier: app.settings, access: app.access });
 }
 
 export function resetSettings() {
@@ -108,8 +121,20 @@ export function resetSettings() {
   app.settings = { ...DEFAULT_SETTINGS };
   app.engine.setDetector({ ...ONSET_DEFAULTS });
   retrain();
-  store.saveSettings({ detector: {}, classifier: app.settings });
+  persistSettings();
 }
+
+// ------------------------------------------------------------- self-hearing --
+// Every sound/vibration Hum makes mutes knock detection for its duration (+ tail).
+setGuard((ms) => {
+  const now = performance.now();
+  const m = app.engine.mute(now, now + ms);
+  return {
+    end(tailMs = 150) {
+      m.to = performance.now() + tailMs;
+    },
+  };
+});
 
 // ------------------------------------------------------------- navigation ----
 

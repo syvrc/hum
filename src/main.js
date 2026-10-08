@@ -19,8 +19,11 @@ import { downloadJson, buildDataset } from './report.js';
 import { home } from './screens/home.js';
 import { wizard } from './screens/wizard.js';
 import { lab, copyReport, sendDataset } from './screens/lab.js';
+import { access } from './screens/access.js';
+import { phrases } from './screens/phrases.js';
+import { warmUpSpeech } from './voice.js';
 
-app.screens = { home, wizard, lab };
+app.screens = { home, wizard, lab, access, phrases };
 app.map = new TableMap($('#map'));
 app.scope = new Scope($('#scope'), app.engine);
 
@@ -33,6 +36,7 @@ async function start() {
   btn.disabled = true;
   btn.textContent = 'Starting…';
   $('#startError').hidden = true;
+  warmUpSpeech(); // inside the tap: lets the browser speak later, when knocks (not taps) trigger it
   try {
     // start() creates the AudioContext synchronously, inside this tap (browsers only
     // allow audio to start from a user gesture); stored tables load in parallel.
@@ -44,8 +48,8 @@ async function start() {
     app.scope.start();
     updateStatus();
     setInterval(updateStatus, 500);
-    // First run (no table yet) goes straight into setup.
-    go(app.profile ? 'home' : 'wizard', { mode: 'new' });
+    // First run (no table yet) goes straight into setup; otherwise straight to the Access Pad.
+    go(app.profile ? (app.model ? 'access' : 'home') : 'wizard', { mode: 'new' });
   } catch (e) {
     log('start failed:', e.name, e.message);
     app.engine.stop();

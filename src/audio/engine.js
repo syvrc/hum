@@ -92,8 +92,10 @@ export class AudioEngine extends EventTarget {
    * touching the glass also makes a little knock that the mic hears.
    */
   mute(from, to) {
-    this.mutes.push({ from, to });
-    if (this.mutes.length > 16) this.mutes.shift();
+    const m = { from, to };
+    this.mutes.push(m);
+    if (this.mutes.length > 32) this.mutes.shift();
+    return m; // callers may move m.to later (e.g. when speech ends early)
   }
 
   isMuted(t) {
