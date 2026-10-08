@@ -8,7 +8,8 @@ export function confusionHtml(summary, pads) {
   const rows = summary.labels
     .map((truth, i) => {
       const row = summary.matrix[i];
-      const total = row.reduce((a, b) => a + b, 0) || 1;
+      if (!row.some((v) => v > 0)) return ''; // e.g. the "none" column has no row of its own
+      const total = row.reduce((a, b) => a + b, 0);
       const cells = row
         .map((v, j) => {
           const frac = v / total;

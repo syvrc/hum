@@ -49,13 +49,18 @@ export const home = {
       ? `<div class="card active-profile">
           <div class="eyebrow">ACTIVE TABLE</div>
           <div class="title-row"><h2>${esc(p.name)}</h2><button class="btn small" data-act="rename" data-id="${p.id}">Rename</button></div>
-          <p class="mono small muted">${p.pads.length} pads · ${p.samples.filter((s) => s.padId !== NONE).length} example taps${countFor(p, NONE) ? ` · ${countFor(p, NONE)} ignore sounds` : ''} · updated ${ago(p.updatedAt)}</p>
-          <p class="mono small">self-check ${pct(p.check?.padAccuracy)}${p.lastTest ? ` · last accuracy test ${pct(p.lastTest.summary.accuracy)} (${p.lastTest.summary.n} taps)` : ''}${p.check?.setupSeconds ? ` · setup took ${p.check.setupSeconds} s` : ''}</p>
-          <div class="chips">${p.pads.map((pad) => `<span class="chip static">${esc(pad.short)} <span class="mono">${countFor(p, pad.id)}</span></span>`).join('')}</div>
-          <button class="btn primary big" data-act="access" ${app.model ? '' : 'disabled'}>Open Access Pad →</button>
+          ${
+            p.legacy
+              ? `<p class="warn">This table was set up with the first prototype's spot-based layout. Hum now listens for <b>✋ palm / ✊ knuckle × 1–3 knocks</b>, anywhere on the table — please set it up again (about a minute).</p>
+                 <button class="btn primary big" data-act="new">Set up again →</button>`
+              : `<p class="mono small muted">${p.samples.filter((s) => s.padId !== NONE).length} example knocks${countFor(p, NONE) ? ` · ${countFor(p, NONE)} ignore sounds` : ''} · updated ${ago(p.updatedAt)}</p>
+          <p class="mono small">self-check ${pct(p.check?.padAccuracy)}${p.lastTest?.kind === 'rhythm' ? ` · last accuracy test ${pct(p.lastTest.summary.accuracy)} (${p.lastTest.summary.n} patterns)` : ''}${p.check?.setupSeconds ? ` · setup took ${p.check.setupSeconds} s` : ''}</p>
+          <div class="chips">${p.pads.map((pad) => `<span class="chip static">${pad.icon} ${esc(pad.short)} <span class="mono">${countFor(p, pad.id)}</span></span>`).join('')}</div>
+          <button class="btn primary big" data-act="access" ${app.model ? '' : 'disabled'}>Open Access Pad →</button>`
+          }
           <div class="row">
             <button class="btn" data-act="lab" ${app.model ? '' : 'disabled'}>Accuracy test &amp; play</button>
-            <button class="btn" data-act="retrain">Retrain</button>
+            <button class="btn" data-act="retrain" ${p.legacy ? 'disabled' : ''}>Retrain</button>
             <button class="btn" data-act="export" data-id="${p.id}">Export</button>
           </div>
         </div>`
@@ -66,7 +71,7 @@ export const home = {
     const list = others.length
       ? `<h3>Other tables</h3><ul class="profile-list">${others
           .map(
-            (e) => `<li><div><b>${esc(e.name)}</b><span class="mono small muted">${e.pads} pads · ${ago(e.updatedAt)}</span></div>
+            (e) => `<li><div><b>${esc(e.name)}</b><span class="mono small muted">updated ${ago(e.updatedAt)}</span></div>
               <div class="row"><button class="btn small" data-act="use" data-id="${e.id}">Use</button>
               <button class="btn small" data-act="export" data-id="${e.id}">Export</button>
               <button class="btn small danger" data-act="delete" data-id="${e.id}">Delete</button></div></li>`,

@@ -5,15 +5,14 @@ import { AudioEngine } from './audio/engine.js';
 import { ONSET_DEFAULTS } from './audio/onset.js';
 import { extractFeatures } from './audio/features.js';
 import { Motion } from './platform.js';
-import { hydrate, dehydrate, trainModel, newProfile, uid, assignDefaultPhrases } from './profile.js';
+import { hydrate, dehydrate, trainModel, uid, assignDefaultPhrases } from './profile.js';
 import { setGuard, deleteClip } from './voice.js';
-import { presetPads } from './pads.js';
 import * as store from './store.js';
 import { log } from './ui/log.js';
 import { $ } from './ui/dom.js';
 
 export const DEFAULT_SETTINGS = Object.freeze({ k: 3, minConfidence: 0.2, maxDistRatio: 4 });
-export const ACCESS_DEFAULTS = Object.freeze({ confirm: true, rate: 1, voiceURI: null, chime: true, vibrate: true });
+export const ACCESS_DEFAULTS = Object.freeze({ confirm: true, rate: 1, voiceURI: null, chime: true, vibrate: true, gapMs: 450 });
 
 /** App-wide events for other parts (e.g. the Companion link): 'phrase', … */
 export const bus = new EventTarget();
@@ -44,14 +43,8 @@ export async function loadState() {
   app.detector = saved.detector || {};
   app.engine.detectorOpts = { ...app.detector };
 
-  const p0 = await store.takePhase0Session();
-  if (p0) {
-    const prof = newProfile('Test table (Phase 0)', presetPads(p0.presetId).map((p) => p.id));
-    const stored = { ...dehydrate(prof), samples: p0.samples, lastTest: p0.lastTest || null };
-    await store.saveProfile(stored);
-    await store.setActiveId(stored.id);
-    log('migrated Phase 0 training into a profile');
-  }
+  // Phase 0 spike data used location pads, which Hum no longer uses — just clear it.
+  await store.takePhase0Session();
 
   app.profiles = await store.listProfiles();
   const activeId = await store.getActiveId();
@@ -65,7 +58,8 @@ export async function activate(id) {
     app.model = null;
     return false;
   }
-  app.profile = assignDefaultPhrases(hydrate(stored));
+  app.profile = hydrate(stored);
+  if (!app.profile.legacy) assignDefaultPhrases(app.profile);
   retrain();
   await store.setActiveId(id);
   log(`active profile "${app.profile.name}" (${app.profile.samples.length} taps)`);
@@ -73,7 +67,8 @@ export async function activate(id) {
 }
 
 export function retrain() {
-  app.model = app.profile ? trainModel(app.profile, app.settings) : null;
+  // Legacy (location-based) tables can't drive the tap-type × rhythm screens.
+  app.model = app.profile && !app.profile.legacy ? trainModel(app.profile, app.settings) : null;
 }
 
 export async function saveProfile(profile = app.profile) {
@@ -90,7 +85,7 @@ export function saveProfileSoon(profile = app.profile) {
 
 export async function deleteProfile(id) {
   const stored = await store.loadProfile(id);
-  for (const pad of stored?.pads || []) if (pad.clipId) await deleteClip(pad.clipId); // recorded voices go too
+  for (const c of [...(stored?.commands || []), ...(stored?.pads || [])]) if (c.clipId) await deleteClip(c.clipId); // recorded voices go too
   await store.deleteProfile(id);
   app.profiles = await store.listProfiles();
   if (app.profile?.id === id) {

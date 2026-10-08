@@ -182,3 +182,56 @@ export function buzz(pattern) {
   guard(total + TAIL_MS);
   navigator.vibrate(pattern);
 }
+
+// ------------------------------------------------------------- SOS sounds ----
+
+/** One short loud beep (SOS countdown). */
+export function beep(ctx, freq = 880, ms = 160) {
+  if (!ctx || ctx.state !== 'running') return;
+  const t = ctx.currentTime;
+  const o = ctx.createOscillator();
+  const g = ctx.createGain();
+  o.type = 'square';
+  o.frequency.value = freq;
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.4, t + 0.01);
+  g.gain.setValueAtTime(0.4, t + ms / 1000 - 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + ms / 1000);
+  o.connect(g).connect(ctx.destination);
+  o.start(t);
+  o.stop(t + ms / 1000 + 0.02);
+  guard(ms + TAIL_MS);
+}
+
+/** Two-tone siren until stop() is called. Knock detection stays muted while it sounds. */
+export function siren(ctx) {
+  if (!ctx) return { stop() {} };
+  const o = ctx.createOscillator();
+  const f = ctx.createBiquadFilter();
+  const g = ctx.createGain();
+  o.type = 'sawtooth';
+  f.type = 'lowpass';
+  f.frequency.value = 2600;
+  g.gain.value = 0.5;
+  o.connect(f).connect(g).connect(ctx.destination);
+  let hi = false;
+  const flip = () => {
+    hi = !hi;
+    o.frequency.setTargetAtTime(hi ? 960 : 640, ctx.currentTime, 0.02);
+  };
+  flip();
+  o.start();
+  const timer = setInterval(flip, 450);
+  const muted = guard(24 * 3600 * 1000);
+  return {
+    stop() {
+      clearInterval(timer);
+      try {
+        o.stop();
+      } catch {
+        /* already stopped */
+      }
+      muted.end(TAIL_MS);
+    },
+  };
+}

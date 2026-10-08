@@ -1,6 +1,6 @@
 // Surface Profiles — everything Hum knows about one table ("Dining table", "Desk"…):
-// which pads exist, the example taps for each pad, sounds to ignore, and the noise
-// floor measured during setup.
+// the example knocks for each tap type (palm, knuckle), everyday sounds to ignore, the
+// noise floor measured during setup, and what each command (type × 1–3 knocks) says.
 //
 // We store the *raw* ~45 ms audio of every example (not just the numbers computed
 // from it), so improving the feature code later automatically upgrades old profiles.
@@ -9,58 +9,85 @@
 
 import { extractFeatures, dimWeights, FEATURE_VERSION } from './audio/features.js';
 import { KNN, leaveOneOut } from './ml/knn.js';
-import { makePad, ZONES, TAP_TYPES } from './pads.js';
+import { makePad, makeCommands, isLegacyPadId, DEFAULT_TYPES, TAP_TYPES, ZONES } from './pads.js';
 
 export const NONE = '__none'; // the "Not a command" class: sounds Hum should ignore
-export const TRAIN_PER_PAD = 8;
-export const MIN_PER_PAD = 4; // fewer than this and a pad can't be checked or tested
-export const MAX_PADS = 8;
+export const TRAIN_PER_PAD = 8; // example knocks per tap type
+export const MIN_PER_PAD = 4; // fewer than this and a type can't be checked or tested
 export const MAX_NONE = 24;
-export const PROFILE_VERSION = 1;
+export const PROFILE_VERSION = 2; // v2 = tap type × rhythm (v1 = location pads)
 
-const DERIVED_PAD_KEYS = ['zone', 'type', 'label', 'short', 'where', 'how'];
+const DERIVED_PAD_KEYS = ['zone', 'type', 'label', 'short', 'where', 'how', 'icon', 'legacy'];
 
 export const noneLabel = { id: NONE, label: 'IGNORE', short: 'IGNORE' };
 
-// Editable default phrases for the Access Pad, given to pads in order (brief §3.3).
-export const DEFAULT_PHRASES = ['Yes', 'No', 'I need water', "I'm in pain", 'Please come here', 'Thank you', 'Help me, please', 'I need the bathroom'];
+// Editable default phrases (brief §3.3), in command order: ✋×1, ✊×1, ✋×2, ✊×2, ✋×3, ✊×3.
+export const DEFAULT_PHRASES = ['Yes', 'No', 'I need water', "I'm in pain", 'Please come here', 'Thank you'];
 
-/** Give every pad without a phrase the next unused default phrase. */
+/** Give every command without a phrase the next unused default phrase. */
 export function assignDefaultPhrases(profile) {
-  const used = new Set(profile.pads.map((p) => p.phrase).filter(Boolean));
+  const used = new Set(profile.commands.map((c) => c.phrase).filter(Boolean));
   const free = DEFAULT_PHRASES.filter((t) => !used.has(t));
-  for (const pad of profile.pads) if (!pad.phrase) pad.phrase = free.shift() || pad.label;
+  for (const c of profile.commands) if (!c.phrase) c.phrase = free.shift() || `${c.type} ×${c.count}`;
   return profile;
 }
 
-export function newProfile(name, padIds, id = uid()) {
+export function newProfile(name, types = DEFAULT_TYPES, id = uid()) {
   const now = Date.now();
-  return { v: PROFILE_VERSION, id, name, createdAt: now, updatedAt: now, pads: padIds.map((pid) => makePad(pid)), samples: [], calibration: null, check: null, lastTest: null };
+  return {
+    v: PROFILE_VERSION,
+    id,
+    name,
+    createdAt: now,
+    updatedAt: now,
+    pads: types.map((t) => makePad(t)), // the sounds Hum learns (tap types)
+    commands: makeCommands(types),
+    samples: [],
+    calibration: null,
+    check: null,
+    lastTest: null,
+  };
 }
 
 /** Stored form → runtime form (pads expanded, features computed from the raw audio). */
 export function hydrate(stored) {
+  const pads = stored.pads.map((p) => ({ ...makePad(p.id), ...stripDerived(p) }));
+  const legacy = pads.some((p) => isLegacyPadId(p.id));
+  const types = pads.map((p) => p.id);
+  // Commands: the stored ones (phrases, clips, remote mapping) on top of the full set.
+  const storedCmds = new Map((stored.commands || []).map((c) => [c.id, c]));
+  const commands = legacy ? [] : makeCommands(types).map((c) => ({ ...c, ...storedCmds.get(c.id) }));
   return {
     ...stored,
-    pads: stored.pads.map((p) => ({ ...makePad(p.id), ...stripDerived(p) })),
+    legacy,
+    pads,
+    commands,
     samples: (stored.samples || []).map(withFeatures),
-    lastTest: stored.lastTest ? { ...stored.lastTest, results: stored.lastTest.results.map((r) => ({ ...r, sample: r.sample && withFeatures(r.sample) })) } : null,
+    lastTest: mapTestSamples(stored.lastTest, withFeatures),
   };
+}
+
+/** Apply fn to every stored knock sample inside a test result (old and new formats). */
+function mapTestSamples(lt, fn) {
+  if (!lt) return null;
+  const each = (arr) => (arr || []).map((r) => ({ ...r, sample: r.sample ? fn(r.sample) : null }));
+  return { ...lt, results: each(lt.results), taps: lt.taps ? each(lt.taps) : undefined };
 }
 
 /** Runtime form → stored form (no derived fields, no feature vectors). */
 export function dehydrate(profile) {
   return {
-    v: PROFILE_VERSION,
+    v: profile.legacy ? 1 : PROFILE_VERSION,
     id: profile.id,
     name: profile.name,
     createdAt: profile.createdAt,
     updatedAt: profile.updatedAt,
     pads: profile.pads.map(stripDerived),
+    commands: (profile.commands || []).map((c) => ({ ...c })),
     samples: profile.samples.map(stripSample),
     calibration: profile.calibration ?? null,
     check: profile.check ?? null, // summary of the last self-check { padAccuracy, falseTriggers, setupSeconds, at }
-    lastTest: profile.lastTest ? { ...profile.lastTest, results: profile.lastTest.results.map((r) => ({ ...r, sample: r.sample && stripSample(r.sample) })) } : null,
+    lastTest: mapTestSamples(profile.lastTest, stripSample),
   };
 }
 
@@ -80,7 +107,7 @@ function stripDerived(p) {
 
 export const countFor = (profile, padId) => profile.samples.filter((s) => s.padId === padId).length;
 
-/** Labels the classifier knows: every pad, plus NONE if ignore-sounds were recorded. */
+/** Labels the classifier knows: every tap type, plus NONE if ignore-sounds were recorded. */
 export function classLabels(profile) {
   const ids = profile.pads.map((p) => p.id);
   return countFor(profile, NONE) > 0 ? [...ids, NONE] : ids;
@@ -99,10 +126,10 @@ export function trainModel(profile, settings) {
 }
 
 /**
- * Turn a raw k-NN prediction into a decision:
- *   'pad'     — confident: act on it
+ * Turn a raw k-NN prediction for ONE knock into a decision:
+ *   'pad'     — confident about the tap type
  *   'ignored' — sounded like a trained "not a command" sound
- *   'unsure'  — too close between pads, or unlike anything taught → do nothing
+ *   'unsure'  — too close to call, or unlike anything taught (still counts as a knock)
  */
 export function decide(model, vec, settings) {
   const p = model.predict(vec);
@@ -118,7 +145,7 @@ export function isReadyToCheck(profile) {
 
 /**
  * Self-check after training: leave-one-out accuracy, confusion matrix, how separable
- * each pad is, and plain-English advice for pads that get mixed up.
+ * each tap type is, and plain-English advice if they get mixed up.
  */
 export function selfCheck(profile, settings) {
   const labels = classLabels(profile);
@@ -127,7 +154,7 @@ export function selfCheck(profile, settings) {
   const y = usable.map((s) => s.padId);
   const opts = { k: settings.k, dimWeights: dimWeights() };
   const loo = leaveOneOut(X, y, { ...opts, labels });
-  // Pad accuracy only counts real pad taps; "ignore" sounds wrongly heard as pads are
+  // Accuracy only counts real knocks; "ignore" sounds wrongly heard as knocks are
   // reported separately as false triggers.
   const padPreds = loo.predictions.filter((p) => p.truth !== NONE);
   const padAccuracy = padPreds.length ? padPreds.filter((p) => p.label === p.truth).length / padPreds.length : 0;
@@ -148,9 +175,9 @@ export function selfCheck(profile, settings) {
 
 /**
  * Silhouette score per class, in the classifier's own (normalised, weighted) space:
- * for each example, (distance to the nearest *other* pad's examples − distance to its
- * own pad's examples) ÷ the larger of the two. Near 1 = clearly its own sound;
- * near 0 or below = it sounds as much like another pad as like itself.
+ * for each example, (distance to the nearest *other* class's examples − distance to its
+ * own class's examples) ÷ the larger of the two. Near 1 = clearly its own sound;
+ * near 0 or below = it sounds as much like another class as like itself.
  */
 export function separability(model) {
   const { Z, y, labels } = model;
@@ -183,7 +210,7 @@ export function separability(model) {
   return out;
 }
 
-/** The most-confused pairs (≥ 10% of their taps mixed up), worst first, with fixes. */
+/** The most-confused pairs (≥ 10% of their knocks mixed up), worst first, with fixes. */
 export function advise(loo, pads) {
   const name = (id) => (id === NONE ? 'background sounds' : pads.find((p) => p.id === id)?.label || id);
   const { labels, matrix } = loo;
@@ -205,48 +232,20 @@ export function advise(loo, pads) {
         a: pad,
         b: NONE,
         frac,
-        text: `${name(pad)} is sometimes mistaken for background sounds (${pctTxt}). Tap it a little firmer, or re-record the ignore sounds.`,
-        fixes: [{ action: 'retrain', pads: [pad], label: `Retrain ${shortName(pads, pad)}` }, { action: 'clearNone', label: 'Re-record ignore sounds' }],
+        text: `${name(pad)} knocks are sometimes mistaken for background sounds (${pctTxt}). Knock a little firmer, or re-record the ignore sounds.`,
+        fixes: [{ action: 'retrain', pads: [pad], label: `Retrain ${name(pad).toLowerCase()}` }, { action: 'clearNone', label: 'Re-record ignore sounds' }],
       };
     }
-    // Suggest changing the tap type of the second pad to one that sounds most different.
-    const padB = pads.find((p) => p.id === b);
-    const newType = padB && alternativeType(pads, padB);
-    const fixes = [{ action: 'retrain', pads: [a, b], label: 'Retrain both' }];
-    if (newType) fixes.push({ action: 'changeType', pad: b, type: newType, label: `Make ${shortName(pads, b)} a ${TAP_TYPES[newType].label.toLowerCase()} tap` });
-    if (pads.length > 2) fixes.push({ action: 'remove', pad: b, label: `Remove ${shortName(pads, b)}` });
+    const howA = TAP_TYPES[pads.find((p) => p.id === a)?.type]?.how;
+    const howB = TAP_TYPES[pads.find((p) => p.id === b)?.type]?.how;
     return {
       a,
       b,
       frac,
-      text: `${name(a)} and ${name(b)} sound alike (${pctTxt} mixed up) — retrain them, move one, or change one's tap type.`,
-      fixes,
+      text: `${name(a)} and ${name(b)} sound alike (${pctTxt} mixed up). Make them as different as you can${howA && howB ? ` — ${howA}; ${howB}` : ''} — then retrain both.`,
+      fixes: [{ action: 'retrain', pads: [a, b], label: 'Retrain both' }],
     };
   });
-}
-
-const shortName = (pads, id) => pads.find((p) => p.id === id)?.short || id;
-
-// Which tap type sounds most different from each type (palm ↔ knuckle are the most distinct).
-const CONTRAST = { palm: ['knuckle', 'nail', 'fist'], knuckle: ['palm', 'fist', 'nail'], nail: ['palm', 'fist', 'knuckle'], fist: ['nail', 'knuckle', 'palm'] };
-
-export function alternativeType(pads, pad) {
-  const used = new Set(pads.filter((p) => p.zone === pad.zone).map((p) => p.type));
-  return CONTRAST[pad.type].find((t) => !used.has(t)) || null;
-}
-
-/** Replace pad `padId` with a new (zone, type) pad, dropping its examples. */
-export function changePad(profile, padId, zone, type) {
-  const newId = `${zone}:${type}`;
-  if (profile.pads.some((p) => p.id === newId)) return false;
-  profile.pads = profile.pads.map((p) => (p.id === padId ? { ...makePad(newId), ...stripDerived(p), id: newId } : p));
-  profile.samples = profile.samples.filter((s) => s.padId !== padId);
-  return true;
-}
-
-export function removePad(profile, padId) {
-  profile.pads = profile.pads.filter((p) => p.id !== padId);
-  profile.samples = profile.samples.filter((s) => s.padId !== padId);
 }
 
 // --- Export / import --------------------------------------------------------------
@@ -255,14 +254,16 @@ export function exportProfile(profile) {
   const stored = dehydrate(profile);
   return {
     kind: 'hum-profile',
-    version: PROFILE_VERSION,
+    version: stored.v,
     featureVersion: FEATURE_VERSION,
     exportedAt: new Date().toISOString(),
     audioFormat: 'int16 little-endian, base64, one string per channel',
+    note: 'Recorded voice clips are not included.',
     profile: {
       ...stored,
+      commands: stored.commands.map(({ clipId, ...c }) => c),
       samples: stored.samples.map((s) => ({ ...s, channels: s.channels.map(f32ToB64) })),
-      lastTest: stored.lastTest ? { ...stored.lastTest, results: stored.lastTest.results.map(({ sample, ...r }) => r) } : null,
+      lastTest: mapTestSamples(stored.lastTest, () => null),
     },
   };
 }
@@ -273,15 +274,16 @@ export function importProfile(json) {
   const p = json.profile;
   if (!Array.isArray(p.pads) || !Array.isArray(p.samples)) throw new Error('This profile file is damaged.');
   for (const pad of p.pads) {
-    const [zone, type] = String(pad.id).split(':');
-    if (!ZONES[zone] || !TAP_TYPES[type]) throw new Error(`Unknown pad "${pad.id}" in profile.`);
+    const id = String(pad.id);
+    const ok = isLegacyPadId(id) ? ZONES[id.split(':')[0]] && TAP_TYPES[id.split(':')[1]] : TAP_TYPES[id];
+    if (!ok) throw new Error(`Unknown tap type "${id}" in profile.`);
   }
   const stored = {
     ...p,
     id: uid(), // imported copies never overwrite an existing profile
     updatedAt: Date.now(),
     samples: p.samples.map((s) => ({ ...s, channels: s.channels.map(b64ToF32) })),
-    lastTest: p.lastTest ? { ...p.lastTest, results: p.lastTest.results.map((r) => ({ ...r, sample: null })) } : null,
+    lastTest: mapTestSamples(p.lastTest, () => null),
   };
   return hydrate(stored);
 }

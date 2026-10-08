@@ -1,15 +1,15 @@
-// Setup wizard — "Teach Hum your table" (brief §3.1). Target: under 60 seconds.
-//   1 PLACE   lay the phone down, choose pads
+// Setup wizard — "Teach Hum your table" (brief §3.1). Target: well under a minute.
+//   1 PLACE   lay the phone down; see the 6 knock patterns
 //   2 QUIET   3 s of silence → noise floor
-//   3 PADS    8 taps per pad
+//   3 SOUNDS  8 palm slaps, 8 knuckle knocks — anywhere on the table
 //   4 IGNORE  optional 5 s of everyday sounds → the "not a command" class
 //   5 CHECK   leave-one-out self-check, confusion matrix, advice with one-tap fixes
 //   → SAVE    name the table; it becomes the active profile
 // Nothing is saved until the last step, so cancelling never damages an existing table.
 
 import { app, go, saveProfile, retrain } from '../app.js';
-import { PRESETS, ZONES, TAP_TYPES, makePad } from '../pads.js';
-import { NONE, TRAIN_PER_PAD, MAX_PADS, MAX_NONE, newProfile, countFor, selfCheck, changePad, removePad, noneLabel, assignDefaultPhrases } from '../profile.js';
+import { makeCommands, patternText, DEFAULT_TYPES } from '../pads.js';
+import { NONE, TRAIN_PER_PAD, MAX_NONE, newProfile, countFor, selfCheck, noneLabel, assignDefaultPhrases } from '../profile.js';
 import { confusionHtml } from '../ui/confusion.js';
 import { $, $$, esc, pct, toast } from '../ui/dom.js';
 import { setActiveId } from '../store.js';
@@ -18,7 +18,7 @@ import { log } from '../ui/log.js';
 const QUIET_MS = 3000;
 const IGNORE_MS = 5000;
 const SETTLE_MS = 600; // let the sound of pressing the button die away before measuring
-const STEP_NAMES = { place: '1/5 · PLACE', quiet: '2/5 · QUIET', pad: '3/5 · PADS', ignore: '4/5 · IGNORE', check: '5/5 · CHECK', save: 'SAVE' };
+const STEP_NAMES = { place: '1/5 · PLACE', quiet: '2/5 · QUIET', pad: '3/5 · SOUNDS', ignore: '4/5 · IGNORE', check: '5/5 · CHECK', save: 'SAVE' };
 
 export const wizard = {
   instrument: true,
@@ -27,15 +27,15 @@ export const wizard = {
     this.el = el;
     this.saved = false;
     this.timers = [];
-    if (mode === 'retrain' && app.profile) {
-      // Independent copy: the saved table stays untouched until "Save".
-      const p = app.profile;
-      this.draft = { ...p, pads: p.pads.map((x) => ({ ...x })), samples: [], check: null, lastTest: null };
+    const p = app.profile;
+    if (mode === 'retrain' && p && !p.legacy) {
+      // Independent copy (keeps name + phrases); the saved table is untouched until "Save".
+      this.draft = { ...p, pads: p.pads.map((x) => ({ ...x })), commands: p.commands.map((c) => ({ ...c })), samples: [], check: null, lastTest: null };
     } else {
-      this.draft = newProfile('', PRESETS[0].pads);
+      this.draft = newProfile(mode === 'retrain' && p ? p.name : '', DEFAULT_TYPES);
+      mode = 'new';
     }
     this.mode = mode;
-    this.presetId = PRESETS.find((pr) => pr.pads.join() === this.draft.pads.map((x) => x.id).join())?.id || 'custom';
     this.target = TRAIN_PER_PAD;
     this.queue = [];
     this.ignoreVisited = false;
@@ -80,34 +80,14 @@ export const wizard = {
   },
 
   placeHtml() {
-    const presets = [...PRESETS, { id: 'custom', name: 'Custom', note: 'Pick 2–8 pads: where × how you tap' }];
-    const note = presets.find((p) => p.id === this.presetId).note;
+    const cmds = makeCommands(this.draft.pads.map((p) => p.id));
     return `
       <h2>Place the phone</h2>
-      <p>Lay it <b>flat and face-up</b> on a hard table, at least a hand-width from the edges. Two strips of tape at its corners let you put it back in exactly the same spot.</p>
-      <h3>Choose your pads</h3>
-      <div class="chips">${presets.map((p) => `<button class="chip ${this.presetId === p.id ? 'active' : ''}" data-act="preset" data-id="${p.id}">${esc(p.name)}</button>`).join('')}</div>
-      <p class="muted small">${esc(note)}</p>
-      ${this.presetId === 'custom' ? this.gridHtml() : ''}
-      <p class="mono small">${this.draft.pads.length} pads: ${this.draft.pads.map((p) => esc(p.short)).join(' · ')}</p>
-      <button class="btn primary big" data-act="toQuiet" ${this.draft.pads.length >= 2 ? '' : 'disabled'}>Next: 3 seconds of quiet →</button>`;
-  },
-
-  gridHtml() {
-    const zones = Object.keys(ZONES);
-    const head = zones.map((z) => `<th scope="col">${ZONES[z].label}</th>`).join('');
-    const rows = Object.keys(TAP_TYPES)
-      .map((t) => {
-        const cells = zones
-          .map((z) => {
-            const on = this.draft.pads.some((p) => p.id === `${z}:${t}`);
-            return `<td><button class="cell ${on ? 'on' : ''}" data-act="cell" data-id="${z}:${t}" aria-pressed="${on}" aria-label="${ZONES[z].label} ${TAP_TYPES[t].label}">${on ? '✓' : ''}</button></td>`;
-          })
-          .join('');
-        return `<tr><th scope="row">${TAP_TYPES[t].label}</th>${cells}</tr>`;
-      })
-      .join('');
-    return `<div class="cm-wrap"><table class="padgrid"><thead><tr><th></th>${head}</tr></thead><tbody>${rows}</tbody></table></div>`;
+      <p>Lay it <b>flat and face-up</b> on a hard table. You can knock <b>anywhere</b> within easy reach — there are no spots to remember.</p>
+      <p>Hum learns two sounds — a <b>✋ palm slap</b> and a <b>✊ knuckle knock</b> — and you use each one, two or three times in a row:</p>
+      <div class="pattern-grid">${cmds.map((c) => `<span class="pattern-chip">${patternText(c)}</span>`).join('')}</div>
+      <p class="muted small">That's 6 commands. Knocking fast 6 or more times is reserved for SOS.</p>
+      <button class="btn primary big" data-act="toQuiet">Next: 3 seconds of quiet →</button>`;
   },
 
   quietHtml() {
@@ -123,12 +103,12 @@ export const wizard = {
         ${r.disturbed ? '<p>Keep your hands off the table and measure again.</p>' : ''}
         <div class="row">
           <button class="btn" data-act="quietStart">Measure again</button>
-          ${r.disturbed ? '' : '<button class="btn primary" data-act="toPads">Next: teach the pads →</button>'}
+          ${r.disturbed ? '' : '<button class="btn primary" data-act="toPads">Next: teach the sounds →</button>'}
         </div>`;
     }
     return `
       <h2>3 seconds of quiet</h2>
-      <p>Hum measures how loud the room is when nobody taps, so it can tell a knock from the background.</p>
+      <p>Hum measures how loud the room is when nobody knocks, so it can tell a knock from the background.</p>
       <button class="btn primary big" data-act="quietStart">Start</button>`;
   },
 
@@ -139,15 +119,15 @@ export const wizard = {
     const dots = Array.from({ length: this.target }, (_, i) => `<i class="${i < n ? 'on' : ''}"></i>`).join('');
     return `
       <div class="card prompt" aria-live="polite">
-        <div class="eyebrow">PAD ${idx + 1} OF ${this.draft.pads.length} · TAP ${Math.min(n + 1, this.target)} OF ${this.target}</div>
-        <div class="big">${esc(pad.label)}</div>
+        <div class="eyebrow">SOUND ${idx + 1} OF ${this.draft.pads.length} · KNOCK ${Math.min(n + 1, this.target)} OF ${this.target}</div>
+        <div class="big">${pad.icon} ${esc(pad.label)}</div>
         <div class="sub">${esc(pad.how)}, ${esc(pad.where)}.</div>
         <div class="dots">${dots}</div>
       </div>
-      <p class="muted small">Tap about once a second, the way you naturally would. Screen touches are ignored.</p>
+      <p class="muted small">One knock about every second, the way you naturally would. Screen touches are ignored.</p>
       <div class="row">
-        <button class="btn" data-act="undo" ${n ? '' : 'disabled'}>Undo last tap</button>
-        <button class="btn" data-act="restartPad" ${n ? '' : 'disabled'}>Start this pad over</button>
+        <button class="btn" data-act="undo" ${n ? '' : 'disabled'}>Undo last knock</button>
+        <button class="btn" data-act="restartPad" ${n ? '' : 'disabled'}>Start this sound over</button>
       </div>`;
   },
 
@@ -158,7 +138,7 @@ export const wizard = {
     }
     return `
       <h2>Teach Hum what to ignore</h2>
-      <p>Optional, 5 seconds. Talk, clap, cough, put a cup down — sounds that should <b>not</b> press a button. Hum learns them as “not a command”.</p>
+      <p>Optional, 5 seconds. Talk, clap, cough, put a cup down — sounds that should <b>not</b> count as a knock. Hum learns them as “not a command”.</p>
       <button class="btn primary big" data-act="ignoreStart">Record 5 seconds</button>
       <button class="btn big" data-act="ignoreSkip">Skip</button>`;
   },
@@ -171,7 +151,7 @@ export const wizard = {
         const s = c.separability[p.id];
         const cls = s === null ? '' : s >= 0.25 ? 'ok' : s >= 0.1 ? 'warn' : 'bad';
         const w = s === null ? 0 : Math.max(4, Math.min(100, s * 100));
-        return `<li><span class="mono">${esc(p.short)}</span><span class="bar ${cls}"><i style="width:${w}%"></i></span><span class="mono small">${s === null ? '–' : s.toFixed(2)}</span></li>`;
+        return `<li><span class="mono">${p.icon} ${esc(p.short)}</span><span class="bar ${cls}"><i style="width:${w}%"></i></span><span class="mono small">${s === null ? '–' : s.toFixed(2)}</span></li>`;
       })
       .join('');
     const advice = c.advice.length
@@ -182,18 +162,18 @@ export const wizard = {
               .join('')}</div></div>`,
           )
           .join('')
-      : '<p class="ok">✓ No pads are getting mixed up.</p>';
+      : '<p class="ok">✓ Palm and knuckle sound clearly different.</p>';
     return `
-      <div class="metric"><span class="num">${pct(c.padAccuracy)}</span><span class="muted">of ${c.padTotal} pad taps recognised when held out (leave-one-out)</span></div>
-      <p class="mono small">${c.noneTotal ? `${c.falseTriggers} of ${c.noneTotal} ignore sounds would have pressed a pad` : 'no ignore sounds recorded'}${this.setupSeconds ? ` · setup took ${this.setupSeconds} s` : ''}</p>
+      <div class="metric"><span class="num">${pct(c.padAccuracy)}</span><span class="muted">of ${c.padTotal} knocks recognised when held out (leave-one-out)</span></div>
+      <p class="mono small">${c.noneTotal ? `${c.falseTriggers} of ${c.noneTotal} ignore sounds would have counted as a knock` : 'no ignore sounds recorded'}${this.setupSeconds ? ` · setup took ${this.setupSeconds} s` : ''}</p>
       ${confusionHtml(c.loo, named)}
-      <h3>How distinct each pad sounds</h3>
+      <h3>How distinct each sound is</h3>
       <ul class="sep">${bars}</ul>
-      <p class="muted small">1.00 = clearly its own sound · 0 = sounds as much like another pad as like itself.</p>
+      <p class="muted small">1.00 = clearly its own sound · 0 = sounds as much like the other one as like itself.</p>
       ${advice}
       <button class="btn primary big" data-act="toSave">Save this table →</button>
       <div class="row">
-        <button class="btn" data-act="more" ${this.target >= 16 ? 'disabled' : ''}>Add 4 more taps per pad</button>
+        <button class="btn" data-act="more" ${this.target >= 16 ? 'disabled' : ''}>Add 4 more of each</button>
         <button class="btn" data-act="redoIgnore">${countFor(this.draft, NONE) ? 'Redo' : 'Record'} ignore sounds</button>
       </div>`;
   },
@@ -216,21 +196,6 @@ export const wizard = {
       case 'cancel':
         go('home');
         break;
-      case 'preset':
-        this.presetId = data.id;
-        if (data.id !== 'custom') d.pads = PRESETS.find((p) => p.id === data.id).pads.map(makePad);
-        app.map.setPads(d.pads);
-        this.render();
-        break;
-      case 'cell': {
-        const has = d.pads.some((p) => p.id === data.id);
-        if (has) d.pads = d.pads.filter((p) => p.id !== data.id);
-        else if (d.pads.length >= MAX_PADS) return toast(`Up to ${MAX_PADS} pads.`);
-        else d.pads.push(makePad(data.id));
-        app.map.setPads(d.pads);
-        this.render();
-        break;
-      }
       case 'toQuiet':
         this.setupStart = Date.now();
         this.quiet = null;
@@ -244,8 +209,7 @@ export const wizard = {
         this.goStep(this.queue.length ? 'pad' : 'check');
         break;
       case 'undo': {
-        const id = this.queue[0];
-        const i = d.samples.findLastIndex((s) => s.padId === id);
+        const i = d.samples.findLastIndex((s) => s.padId === this.queue[0]);
         if (i >= 0) d.samples.splice(i, 1);
         this.render();
         break;
@@ -287,22 +251,11 @@ export const wizard = {
   },
 
   applyFix(fix) {
-    const d = this.draft;
     log('self-check fix:', fix);
     if (fix.action === 'retrain') {
-      d.samples = d.samples.filter((s) => !fix.pads.includes(s.padId));
+      this.draft.samples = this.draft.samples.filter((s) => !fix.pads.includes(s.padId));
       this.queue = [...fix.pads];
       this.goStep('pad');
-    } else if (fix.action === 'changeType') {
-      const pad = d.pads.find((p) => p.id === fix.pad);
-      if (!changePad(d, fix.pad, pad.zone, fix.type)) return toast('That pad already exists.');
-      app.map.setPads(d.pads);
-      this.queue = [`${pad.zone}:${fix.type}`];
-      this.goStep('pad');
-    } else if (fix.action === 'remove') {
-      removePad(d, fix.pad);
-      app.map.setPads(d.pads);
-      this.goStep('check');
     } else if (fix.action === 'clearNone') {
       this.act('redoIgnore');
     }
@@ -327,7 +280,7 @@ export const wizard = {
         const floorDb = vals[vals.length >> 1];
         det.calibrate(floorDb); // start the adaptive floor from the measured value
         const [level, verdict] =
-          floorDb < -55 ? ['ok', 'quiet — perfect'] : floorDb < -42 ? ['ok', 'fine'] : floorDb < -32 ? ['warn', 'noisy — tap firmly'] : ['bad', 'very noisy — Hum may miss taps'];
+          floorDb < -55 ? ['ok', 'quiet — perfect'] : floorDb < -42 ? ['ok', 'fine'] : floorDb < -32 ? ['warn', 'noisy — knock firmly'] : ['bad', 'very noisy — Hum may miss knocks'];
         this.quiet = { result: { floorDb, level, verdict, disturbed: this.quiet.disturbed > 0 } };
         this.draft.calibration = { floorDb, at: Date.now() };
         log(`quiet calibration: floor ${floorDb.toFixed(1)} dB, disturbed ${this.quiet.result.disturbed}`);
@@ -361,7 +314,7 @@ export const wizard = {
   runCheck() {
     if (this.setupSeconds === null && this.setupStart) this.setupSeconds = Math.round((Date.now() - this.setupStart) / 1000);
     this.check = selfCheck(this.draft, app.settings);
-    log('self-check', { padAccuracy: this.check.padAccuracy, falseTriggers: this.check.falseTriggers, setupSeconds: this.setupSeconds });
+    log('self-check', { accuracy: this.check.padAccuracy, falseTriggers: this.check.falseTriggers, setupSeconds: this.setupSeconds });
   },
 
   async save() {
@@ -374,11 +327,11 @@ export const wizard = {
     app.profile = d;
     retrain();
     await setActiveId(d.id);
-    toast(`Saved “${d.name}” — knock a pad to try it`);
+    toast(`Saved “${d.name}” — try ✋ once`);
     go('access');
   },
 
-  // ------------------------------------------------------------------ taps ------
+  // ------------------------------------------------------------------ knocks ----
 
   onTap(sample, d) {
     const draft = this.draft;
@@ -407,7 +360,7 @@ export const wizard = {
     d.marker.ok = true;
     app.map.ripple(pad.id, 'train');
     if (countFor(draft, pad.id) >= this.target) {
-      // Pad complete: short pause (so a stray extra tap isn't counted), then the next pad.
+      // Sound complete: short pause (so a stray extra knock isn't counted), then the next one.
       this.locked = true;
       this.later(() => {
         this.locked = false;

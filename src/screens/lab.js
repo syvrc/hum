@@ -1,15 +1,25 @@
-// Lab: measure the active table honestly (randomised prompted accuracy test) and
-// play with live classification. Test taps are never added to the training data.
+// Lab: measure the active table honestly (randomised, prompted accuracy test of the 6
+// knock patterns) and play with live recognition. Test knocks are never added to the
+// training data.
+//
+// Reported separately, so we know WHAT fails if something does:
+//   pattern accuracy — the whole command right (type AND count)
+//   knock-type accuracy — each single knock's palm/knuckle classification
+//   count accuracy — how often the number of knocks was right
 
 import { app, go, saveProfileSoon } from '../app.js';
-import { decide, noneLabel } from '../profile.js';
+import { decide } from '../profile.js';
+import { RhythmController } from '../gesture.js';
+import { TAP_TYPES, commandId, patternText, patternWords } from '../pads.js';
 import { summarise } from '../ml/knn.js';
 import { confusionHtml } from '../ui/confusion.js';
 import { $, $$, esc, pct, toast } from '../ui/dom.js';
 import { buildReport, buildDataset, copyText, downloadJson, sendToLaptop, latencyStats } from '../report.js';
 import { log } from '../ui/log.js';
 
-const TEST_PER_PAD = 20;
+const TEST_PER_COMMAND = 8;
+const NEXT_PROMPT_PAUSE_MS = 700; // knocks in this pause are ignored, so they can't leak into the next prompt
+const NO_CMD = 'nocmd';
 
 export const lab = {
   instrument: true,
@@ -20,10 +30,21 @@ export const lab = {
     this.test = null;
     this.play = [];
     app.map.setPads(app.profile.pads);
+    this.ctl = new RhythmController(
+      { confirm: false, gapMs: app.access.gapMs },
+      {
+        count: (n, type) => this.live(n, type),
+        command: (cmd) => this.result(commandId(cmd.type, cmd.count)),
+        unsure: (why) => this.result(NO_CMD, why === 'mixed' ? 'mixed types' : 'unclear'),
+        tooMany: (n) => this.result(NO_CMD, `${n} knocks`),
+        sos: () => this.result(NO_CMD, 'SOS pattern'),
+      },
+    );
     this.render();
   },
 
   unmount() {
+    this.ctl.dispose();
     app.map.highlight(null);
   },
 
@@ -31,8 +52,8 @@ export const lab = {
     return !this.test || confirm('Stop the accuracy test? Results so far will be lost.');
   },
 
-  pad(id) {
-    return id === noneLabel.id ? noneLabel : app.profile.pads.find((p) => p.id === id);
+  cmd(id) {
+    return app.profile.commands.find((c) => c.id === id);
   },
 
   render() {
@@ -50,7 +71,6 @@ export const lab = {
         if (this.test && !this.canLeave()) return;
         this.test = null;
         this.tab = b.dataset.tab;
-        app.map.highlight(null);
         this.render();
       }),
     );
@@ -70,7 +90,6 @@ export const lab = {
         break;
       case 'stop':
         this.test = null;
-        app.map.highlight(null);
         this.render();
         break;
       case 'copy':
@@ -85,38 +104,46 @@ export const lab = {
     }
   },
 
+  live(n, type) {
+    const text = `${type ? TAP_TYPES[type].icon : '?'} ×${n}`;
+    app.map.showPattern(text);
+    const el = $('#liveCount', this.el);
+    if (el) el.textContent = `heard so far: ${text} …`;
+  },
+
   // ------------------------------------------------------------------ test ------
 
   testHtml() {
     const t = this.test;
     if (t) {
-      const pad = this.pad(t.prompts[t.idx]);
+      const c = this.cmd(t.prompts[t.idx]);
       const fb = t.feedback;
       const fbHtml = fb
-        ? `<p class="feedback ${fb.ok ? 'ok' : fb.status === 'pad' ? 'bad' : 'unsure'}">${
-            fb.ok ? '✓ correct' : fb.status === 'ignored' ? '? heard as a sound to ignore' : fb.status === 'unsure' ? `? not sure (best guess ${esc(fb.heard)})` : `✗ heard ${esc(fb.heard)}`
-          } · confidence ${fb.confidence.toFixed(2)}</p>`
+        ? `<p class="feedback ${fb.ok ? 'ok' : fb.pred === NO_CMD ? 'unsure' : 'bad'}">${
+            fb.ok ? `✓ ${esc(fb.text)}` : fb.pred === NO_CMD ? `? no command (${esc(fb.why)})` : `✗ heard ${esc(fb.text)}`
+          }</p>`
         : '<p class="feedback">&nbsp;</p>';
       return `
         <div class="card prompt" aria-live="polite">
           <div class="eyebrow">ACCURACY TEST · ${t.idx + 1} / ${t.prompts.length}</div>
-          <div class="big">${esc(pad.label)}</div>
-          <div class="sub">${esc(pad.how)}, ${esc(pad.where)}</div>
+          <div class="big">${patternText(c)}</div>
+          <div class="sub">${esc(patternWords(c))} — ${esc(TAP_TYPES[c.type].how)}, anywhere</div>
+          <div class="sub mono" id="liveCount">&nbsp;</div>
           <div class="progress"><i style="width:${(t.idx / t.prompts.length) * 100}%"></i></div>
         </div>
         ${fbHtml}
         <div class="row">
-          <button class="btn" data-act="redo" ${t.results.length ? '' : 'disabled'}>I tapped the wrong spot — redo</button>
+          <button class="btn" data-act="redo" ${t.results.length ? '' : 'disabled'}>I knocked the wrong pattern — redo</button>
           <button class="btn danger" data-act="stop">Stop test</button>
         </div>
-        <p class="muted small">“Redo” is only for <em>your</em> mistakes (wrong spot or tap type). Excluded taps are counted in the report.</p>`;
+        <p class="muted small">“Redo” is only for <em>your</em> mistakes. Excluded attempts are counted in the report.</p>`;
     }
-    const n = TEST_PER_PAD * app.profile.pads.length;
+    const n = TEST_PER_COMMAND * app.profile.commands.length;
     return `
-      ${app.profile.lastTest ? this.resultsHtml(app.profile.lastTest) : ''}
+      ${app.profile.lastTest?.kind === 'rhythm' ? this.resultsHtml(app.profile.lastTest) : ''}
       <div class="card">
         <div class="eyebrow">ACCURACY TEST</div>
-        <p>${TEST_PER_PAD} prompted taps per pad (${n} in total), in random order. Tap exactly what the screen asks, about once a second. Hum does not learn from these taps.</p>
+        <p>${TEST_PER_COMMAND} prompts per pattern (${n} in total), in random order. Knock exactly the pattern shown, anywhere on the table, then wait for the next one. Hum does not learn from these knocks.</p>
         <button class="btn primary big" data-act="start">Start test</button>
       </div>`;
   },
@@ -124,23 +151,17 @@ export const lab = {
   resultsHtml(lt) {
     const s = lt.summary;
     const lat = latencyStats(lt.results);
-    const gate = s.accuracy >= 0.85 ? ['GO', 'ok', '≥ 85%: continue as planned'] : s.accuracy >= 0.7 ? ['REDUCE', 'warn', '70–85%: merge zones, lean on tap type'] : ['PLAN B', 'bad', '< 70%: tap type × rhythm'];
-    const extra = [
-      s.zoneAccuracy !== null ? `location right ${pct(s.zoneAccuracy)}` : null,
-      s.typeAccuracy !== null ? `tap type right ${pct(s.typeAccuracy)}` : null,
-      `confident & right ${pct(s.accuracyConfident)}`,
-      `not sure ${s.notSure}`,
-      s.ignored ? `heard as ignore ${s.ignored}` : null,
-      `excluded by you ${s.excludedByUser}`,
-    ].filter(Boolean);
+    const tapLat = latencyStats(lt.taps);
+    const gate = s.accuracy >= 0.85 ? ['GO', 'ok', '≥ 85%: continue as planned'] : s.accuracy >= 0.7 ? ['REDUCE', 'warn', '70–85%: simplify (fewer patterns)'] : ['RETHINK', 'bad', '< 70%: needs a rethink'];
+    const named = [...app.profile.commands.map((c) => ({ id: c.id, short: patternText(c) })), { id: NO_CMD, short: 'none' }];
     return `
       <div class="card">
-        <div class="eyebrow">LAST TEST · ${s.n} taps · trained on ${s.trainingTaps}</div>
+        <div class="eyebrow">LAST TEST · ${s.n} patterns · ${s.knocks} knocks · trained on ${s.trainingTaps}</div>
         <div class="metric"><span class="num">${pct(s.accuracy)}</span><span class="gate ${gate[1]}">${gate[0]}</span></div>
-        <p class="muted small">${gate[2]} (brief §6 gate)</p>
-        <p class="mono small">${extra.join(' · ')}</p>
-        <p class="mono small">latency avg ${lat.meanMs?.toFixed(0) ?? '–'} ms · p95 ${lat.p95Ms?.toFixed(0) ?? '–'} ms (knock → on screen)</p>
-        ${confusionHtml(s, [...app.profile.pads, noneLabel])}
+        <p class="muted small">patterns fully right · ${gate[2]}</p>
+        <p class="mono small">single knocks: palm/knuckle right ${pct(s.tapTypeAccuracy)} · knock count right ${pct(s.countAccuracy)} · no command ${s.noCommand} · excluded by you ${s.excludedByUser}</p>
+        <p class="mono small">knock → on screen avg ${tapLat.meanMs?.toFixed(0) ?? '–'} ms · last knock → command avg ${lat.meanMs?.toFixed(0) ?? '–'} ms (includes the ${app.access.gapMs} ms pause that ends a pattern)</p>
+        ${confusionHtml(s, named)}
         <div class="row">
           <button class="btn primary" data-act="copy">Copy report</button>
           ${import.meta.env.DEV ? '<button class="btn" data-act="send">Send dataset to laptop</button>' : ''}
@@ -150,58 +171,74 @@ export const lab = {
   },
 
   startTest() {
-    if (!app.model) return toast('Train this table first.');
-    const prompts = shuffle(app.profile.pads.flatMap((p) => Array(TEST_PER_PAD).fill(p.id)));
-    this.test = { prompts, idx: 0, results: [], excluded: 0, lastAt: 0, startedAt: new Date().toISOString(), feedback: null };
-    app.map.highlight(prompts[0]);
+    if (!app.model) return toast('Set up this table first.');
+    const prompts = shuffle(app.profile.commands.flatMap((c) => Array(TEST_PER_COMMAND).fill(c.id)));
+    this.ctl.dispose();
+    this.test = { prompts, idx: 0, results: [], taps: [], current: [], excluded: 0, lockedUntil: 0, startedAt: new Date().toISOString(), feedback: null };
+    this.render();
+  },
+
+  /** A pattern was decided (or rejected) while a prompt was showing. */
+  result(pred, why = '') {
+    const t = this.test;
+    if (this.tab === 'play' || !t) return this.playResult(pred, why);
+    const truth = t.prompts[t.idx];
+    const knocks = t.current;
+    t.current = [];
+    const last = knocks.at(-1);
+    const record = { truth, pred, why, knocks: knocks.length, latencyMs: last ? performance.now() - last.onsetWall : null };
+    t.results.push(record);
+    for (const k of knocks) t.taps.push({ ...k, truth: this.cmd(truth).type });
+    const ok = pred === truth;
+    t.feedback = { ok, pred, why, text: pred === NO_CMD ? '' : patternText(this.cmd(pred)) };
+    t.idx++;
+    t.lockedUntil = performance.now() + NEXT_PROMPT_PAUSE_MS;
+    if (t.idx >= t.prompts.length) this.finishTest();
     this.render();
   },
 
   redoLast() {
     const t = this.test;
     if (!t?.results.length) return;
-    t.results.pop();
+    const r = t.results.pop();
+    t.taps.splice(t.taps.length - r.knocks, r.knocks);
     t.idx--;
     t.excluded++;
     t.feedback = null;
-    log('test: last tap excluded by user (tapped the wrong spot)');
-    app.map.highlight(t.prompts[t.idx]);
+    log('test: last attempt excluded by user');
     this.render();
   },
 
   finishTest() {
     const t = this.test;
-    const pads = app.profile.pads;
-    const ids = pads.map((p) => p.id);
+    const cmds = app.profile.commands;
+    const labels = [...cmds.map((c) => c.id), NO_CMD];
     const res = t.results;
-    const n = res.length;
-    // Predictions of "ignore" count as wrong; the matrix gets an IGNORE column when needed.
-    const labels = res.some((r) => r.pred === noneLabel.id) ? [...ids, noneLabel.id] : ids;
     const forced = summarise(labels, res.map((r) => r.truth), res.map((r) => r.pred));
-    const padOf = (id) => pads.find((p) => p.id === id);
-    const zoneOk = res.filter((r) => padOf(r.pred) && padOf(r.truth).zone === padOf(r.pred).zone).length;
-    const typeOk = res.filter((r) => padOf(r.pred) && padOf(r.truth).type === padOf(r.pred).type).length;
+    const decided = res.filter((r) => r.pred !== NO_CMD);
     app.profile.lastTest = {
+      kind: 'rhythm',
       at: t.startedAt,
       results: res,
+      taps: t.taps,
       summary: {
-        n,
+        n: res.length,
+        knocks: t.taps.length,
         accuracy: forced.accuracy,
-        accuracyConfident: n ? res.filter((r) => r.pred === r.truth && r.status === 'pad').length / n : 0,
-        notSure: res.filter((r) => r.status === 'unsure').length,
-        ignored: res.filter((r) => r.status === 'ignored').length,
-        zoneAccuracy: new Set(pads.map((p) => p.zone)).size > 1 ? zoneOk / n : null,
-        typeAccuracy: new Set(pads.map((p) => p.type)).size > 1 ? typeOk / n : null,
+        tapTypeAccuracy: t.taps.length ? t.taps.filter((k) => k.pred === k.truth).length / t.taps.length : 0,
+        countAccuracy: res.length ? res.filter((r) => r.knocks === this.cmd(r.truth).count).length / res.length : 0,
+        typeOfDecided: decided.length ? decided.filter((r) => this.cmd(r.pred).type === this.cmd(r.truth).type).length / decided.length : null,
+        noCommand: res.length - decided.length,
         excludedByUser: t.excluded,
         trainingTaps: app.profile.samples.length,
+        gapMs: app.access.gapMs,
         labels: forced.labels,
         matrix: forced.matrix,
         perClass: forced.perClass,
       },
     };
     this.test = null;
-    app.map.highlight(null);
-    log('test finished', { accuracy: forced.accuracy, n });
+    log('test finished', { accuracy: forced.accuracy, n: res.length });
     saveProfileSoon();
   },
 
@@ -210,64 +247,37 @@ export const lab = {
   playHtml() {
     const last = this.play[0];
     const main = last
-      ? `<div class="big ${last.status === 'pad' ? '' : 'unsure'}">${last.status === 'pad' ? esc(this.pad(last.label).label) : last.status === 'ignored' ? 'Ignored' : 'Not sure'}</div>
-         <div class="sub mono">confidence ${last.confidence.toFixed(2)} · distance ratio ${last.distRatio.toFixed(1)}${last.status === 'unsure' ? ` · best guess ${esc(this.pad(last.label).short)}` : ''}</div>
-         <div class="sub mono" id="latency"></div>`
-      : `<div class="big muted">Tap the table</div><div class="sub">Hum shows which pad it heard.</div>`;
+      ? last.pred === NO_CMD
+        ? `<div class="big unsure">No command</div><div class="sub mono">${esc(last.why)}</div>`
+        : `<div class="big">${patternText(this.cmd(last.pred))}</div><div class="sub">“${esc(this.cmd(last.pred).phrase)}”</div>`
+      : `<div class="big muted">Knock a pattern</div><div class="sub">✋ or ✊, once to three times — Hum shows what it recognised (it doesn't speak here).</div>`;
     const hist = this.play
       .slice(1)
-      .map((p) => `<li><span>${p.status === 'pad' ? esc(this.pad(p.label).short) : p.status === 'ignored' ? 'ignored' : '?'}</span><span class="mono muted">${p.confidence.toFixed(2)}</span></li>`)
+      .map((p) => `<li><span>${p.pred === NO_CMD ? `? ${esc(p.why)}` : patternText(this.cmd(p.pred))}</span><span class="mono muted">${p.pred === NO_CMD ? '' : esc(this.cmd(p.pred).phrase)}</span></li>`)
       .join('');
-    return `<div class="card prompt" aria-live="polite"><div class="eyebrow">LIVE</div>${main}</div><ul class="history">${hist}</ul>`;
+    return `<div class="card prompt" aria-live="polite"><div class="eyebrow">LIVE</div>${main}<div class="sub mono" id="liveCount">&nbsp;</div></div><ul class="history">${hist}</ul>`;
   },
 
-  onLatency(ms) {
-    const el = $('#latency', this.el);
-    if (el) el.textContent = `latency ${ms.toFixed(0)} ms (knock → on screen)`;
-    if (this.tab === 'test' && !this.test && this.justFinished) {
-      this.justFinished = false;
-      this.render(); // include the final tap's latency in the results
-    }
+  playResult(pred, why) {
+    this.play.unshift({ pred, why });
+    this.play.length = Math.min(this.play.length, 8);
+    if (this.tab === 'play') this.render();
   },
 
-  // ------------------------------------------------------------------ taps ------
+  // ------------------------------------------------------------------ knocks ----
 
   onTap(sample, d) {
     if (!app.model) return null;
-    const p = decide(app.model, sample.feats.vec, app.settings);
-    const markerLabel = p.status === 'pad' ? this.pad(p.label).short : p.status === 'ignored' ? 'ignore' : '?';
-    if (this.tab === 'play') {
-      this.play.unshift({ label: p.label, status: p.status, confidence: p.confidence, distRatio: p.distRatio });
-      this.play.length = Math.min(this.play.length, 8);
-      d.marker.label = markerLabel;
-      d.marker.ok = p.status === 'pad' ? true : null;
-      app.map.ripple(p.status === 'pad' ? p.label : null, p.status === 'pad' ? 'ok' : 'unsure');
-      this.render();
-      return { summary: { pred: p.label, status: p.status, confidence: p.confidence, distRatio: p.distRatio } };
-    }
     const t = this.test;
-    if (!t) return null;
-    if (performance.now() - t.lastAt < 300) {
-      log('test: extra tap ignored (<300 ms after the previous one)');
-      return null;
-    }
-    const truth = t.prompts[t.idx];
-    sample.padId = truth;
-    const ok = p.label === truth && p.status === 'pad';
-    const record = { truth, pred: p.label, status: p.status, confidence: p.confidence, distRatio: p.distRatio, rejected: p.rejected, latencyMs: null, peakDb: sample.feats.info.peakDb, sample };
-    t.results.push(record);
-    t.idx++;
-    t.lastAt = performance.now();
-    t.feedback = { ok, status: p.status, heard: this.pad(p.label)?.label, confidence: p.confidence };
-    d.marker.label = markerLabel;
-    d.marker.ok = ok;
-    app.map.ripple(p.status === 'pad' ? p.label : null, ok ? 'ok' : p.status === 'pad' ? 'bad' : 'unsure');
-    if (t.idx >= t.prompts.length) {
-      this.finishTest();
-      this.justFinished = true;
-    } else app.map.highlight(t.prompts[t.idx]);
-    this.render();
-    return { record, summary: { pred: p.label, status: p.status, confidence: p.confidence, distRatio: p.distRatio, truth } };
+    if (this.tab === 'test' && (!t || performance.now() < t.lockedUntil)) return null;
+    const p = decide(app.model, sample.feats.vec, app.settings);
+    d.marker.label = p.status === 'pad' ? TAP_TYPES[p.label]?.label : p.status === 'ignored' ? 'ignore' : '?';
+    d.marker.ok = p.status === 'pad' ? true : null;
+    app.map.ripple(p.status === 'pad' ? p.label : null, p.status === 'pad' ? 'ok' : 'unsure');
+    const record = { pred: p.status === 'pad' ? p.label : p.status, status: p.status, confidence: p.confidence, distRatio: p.distRatio, peakDb: sample.feats.info.peakDb, onsetWall: d.onsetWall, latencyMs: null, sample };
+    if (t && p.status !== 'ignored') t.current.push(record);
+    this.ctl.tap({ label: p.label, status: p.status, confidence: p.confidence, t: d.onsetWall });
+    return { record, summary: { pred: p.label, status: p.status, confidence: p.confidence, distRatio: p.distRatio } };
   },
 };
 

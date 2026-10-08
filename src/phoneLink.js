@@ -65,9 +65,15 @@ export function sendToCompanion(type, data = {}, important = false) {
   return phoneLink.link ? phoneLink.link.send(type, { table: app.profile?.name, ...data }, important) : false;
 }
 
+/** Cancel an SOS: if it never reached the Companion, it must not be delivered later. */
+export function cancelSos() {
+  const dropped = phoneLink.link?.dropQueued('sos') || 0;
+  if (!dropped) sendToCompanion('sos_cancel');
+  return dropped;
+}
+
 // Every phrase Hum speaks goes to the caregiver feed.
 bus.addEventListener('phrase', (e) => {
-  const { text, via, padId } = e.detail;
-  const pad = app.profile?.pads.find((p) => p.id === padId);
-  sendToCompanion('phrase', { text, via, pad: pad?.short });
+  const { text, via, pattern } = e.detail;
+  sendToCompanion('phrase', { text, via, pad: pattern });
 });

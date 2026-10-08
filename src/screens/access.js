@@ -1,40 +1,45 @@
 // Access Pad — the hero mode (brief §3.3). Knock the table, Hum speaks a phrase.
-// Giant high-contrast tiles laid out like the table (the left pad's tile is on the left),
-// readable at arm's length. Nothing essential relies on colour alone: every state also
-// has text and an icon.
+// Commands are tap type × number of knocks (✋/✊ × 1–3), anywhere on the table.
+// Giant high-contrast tiles in a 2 × 3 grid (palm column, knuckle column; once / twice /
+// three times) so the screen doubles as the cheat sheet. Nothing essential relies on
+// colour alone: every state also has text and an icon.
 
 import { app, go, bus } from '../app.js';
 import { decide } from '../profile.js';
-import { AccessController } from '../gesture.js';
+import { RhythmController } from '../gesture.js';
+import { TAP_TYPES, MAX_COUNT, patternText, patternWords } from '../pads.js';
 import { speak, playClip, chime, buzz } from '../voice.js';
 import { $, $$, esc } from '../ui/dom.js';
 import { log } from '../ui/log.js';
-
-const ZONE_ORDER = ['far', 'left', 'right', 'near'];
 
 export const access = {
   instrument: false,
 
   mount(el) {
     this.el = el;
-    this.preview = null;
+    this.asking = null;
     this.speaking = null;
-    this.notice = null;
-    this.ctl = new AccessController(
-      { confirm: app.access.confirm },
+    this.ctl = new RhythmController(
+      { confirm: app.access.confirm, gapMs: app.access.gapMs },
       {
-        preview: (padId) => {
-          this.preview = padId;
+        count: (n, type) => this.status('counting', `${type ? TAP_TYPES[type].icon : '?'} ×${n} …`),
+        ask: (cmd) => {
+          this.asking = this.command(cmd);
           if (app.access.chime) chime(app.engine.ctx, 'preview');
           if (app.access.vibrate) buzz(30);
           this.renderTiles();
+          this.status('asking', `“${esc(this.asking.phrase)}”? &nbsp;✋ once = say it · ✊ once = cancel`, true);
         },
-        clearPreview: () => {
-          this.preview = null;
+        answer: (kind, cmd) => {
+          this.asking = null;
           this.renderTiles();
+          if (kind === 'yes') this.say(this.command(cmd));
+          else this.flash(kind === 'timeout' ? 'Cancelled — no answer' : 'Cancelled');
         },
-        speak: (padId) => this.say(padId),
-        unsure: () => this.flash('Didn’t catch that — knock again'),
+        command: (cmd) => this.say(this.command(cmd)),
+        unsure: (reason) => this.flash(reason === 'mixed' ? 'Palm and knuckle got mixed — try again' : 'Didn’t catch that — knock again'),
+        tooMany: (n) => this.flash(`${n} knocks — use 1 to 3 (fast 6+ is SOS)`),
+        sos: () => go('sos'),
       },
     );
     this.render();
@@ -46,98 +51,97 @@ export const access = {
     if ('speechSynthesis' in window) speechSynthesis.cancel();
   },
 
+  command(cmd) {
+    return app.profile.commands.find((c) => c.type === cmd.type && c.count === cmd.count);
+  },
+
   render() {
     this.el.innerHTML = `
       <div class="access">
         <div class="access-status" id="accessStatus" role="status" aria-live="assertive"></div>
-        <div class="tiles" id="tiles"></div>
+        <div class="cmd-grid" id="tiles"></div>
         <div class="row access-actions">
           <button class="btn" data-act="phrases">Edit phrases &amp; voice</button>
           <button class="btn" data-act="home">Exit</button>
         </div>
-        <p class="muted small">${app.access.confirm ? 'Confirm mode is on: one knock chooses, a double-knock anywhere speaks.' : 'Confirm mode is off: a knock speaks right away.'} Change it in “Edit phrases &amp; voice”.</p>
+        <p class="muted small">${
+          app.access.confirm
+            ? 'Knock a pattern anywhere on the table. Hum asks “…?” — then ✋ once says it, ✊ once cancels.'
+            : 'Knock a pattern anywhere on the table and Hum says it right away.'
+        } Fast drumming (6+ knocks) starts SOS.</p>
       </div>`;
     $$('[data-act]', this.el).forEach((b) => b.addEventListener('click', () => go(b.dataset.act === 'home' ? 'home' : 'phrases')));
     this.renderTiles();
+    this.status();
   },
 
   renderTiles() {
-    const pads = app.profile.pads;
-    const zones = Object.fromEntries(ZONE_ORDER.map((z) => [z, pads.filter((p) => p.zone === z)]));
-    const tile = (p) => {
-      const state = this.speaking === p.id ? 'speaking' : this.preview === p.id ? 'preview' : '';
-      const hint = state === 'speaking' ? '🔊 Speaking' : state === 'preview' ? '▶ Double-knock anywhere to say it' : '';
-      return `<div class="tile ${state}" data-pad="${p.id}">
-          <span class="tile-phrase">${esc(p.phrase)}</span>
-          <span class="tile-meta">${esc(p.short)}${p.clipId ? ' · 🎙 recorded voice' : ''}</span>
+    const types = app.profile.pads.map((p) => p.id);
+    const head = types.map((t) => `<div class="cmd-head">${TAP_TYPES[t].icon} ${TAP_TYPES[t].label}</div>`).join('');
+    let cells = '';
+    for (let count = 1; count <= MAX_COUNT; count++) {
+      for (const t of types) {
+        const c = app.profile.commands.find((x) => x.type === t && x.count === count);
+        if (!c) continue;
+        const state = this.speaking === c.id ? 'speaking' : this.asking?.id === c.id ? 'preview' : '';
+        const hint = state === 'speaking' ? '🔊 Speaking' : state === 'preview' ? '? ✋ = say it · ✊ = cancel' : '';
+        cells += `<div class="tile ${state}" data-cmd="${c.id}">
+          <span class="tile-pattern" aria-label="${esc(patternWords(c))}">${patternText(c)}</span>
+          <span class="tile-phrase">${esc(c.phrase)}</span>
+          ${c.clipId ? '<span class="tile-meta">🎙 recorded voice</span>' : ''}
           ${hint ? `<span class="tile-hint">${hint}</span>` : ''}
         </div>`;
-    };
-    const classes = ['tiles', zones.left.length ? '' : 'no-left', zones.right.length ? '' : 'no-right'].join(' ');
-    const tilesEl = $('#tiles', this.el);
-    tilesEl.className = classes;
-    tilesEl.innerHTML = ZONE_ORDER.map((z) => (zones[z].length ? `<div class="zone zone-${z}">${zones[z].map(tile).join('')}</div>` : '')).join('');
-    this.renderStatus();
+      }
+    }
+    $('#tiles', this.el).style.setProperty('--cols', types.length);
+    $('#tiles', this.el).innerHTML = head + cells;
   },
 
-  renderStatus() {
+  /** Status line. kind: undefined (idle) | 'counting' | 'asking' | 'speaking' | 'notice'. */
+  status(kind, html, countdown = false) {
     const el = $('#accessStatus', this.el);
     if (!el) return;
-    const pad = (id) => app.profile.pads.find((p) => p.id === id);
-    let cls = '';
-    let text;
-    if (this.speaking) {
-      cls = 'speaking';
-      text = `🔊 “${esc(pad(this.speaking).phrase)}”`;
-    } else if (this.preview) {
-      cls = 'preview';
-      text = `▶ “${esc(pad(this.preview).phrase)}” — double-knock to say it`;
-    } else if (this.notice) {
-      cls = 'notice';
-      text = `? ${esc(this.notice)}`;
-    } else {
-      text = app.access.confirm ? 'Knock a pad to choose · double-knock to speak' : 'Knock a pad to speak';
-    }
-    el.className = `access-status ${cls}`;
-    el.innerHTML = text;
+    this.statusKind = kind;
+    const idle = app.access.confirm ? 'Knock ✋ or ✊ once, twice or three times' : 'Knock a pattern to speak';
+    el.className = `access-status ${kind || ''}`;
+    el.innerHTML = `${html || idle}${countdown ? '<span class="answer-bar"><i></i></span>' : ''}`;
   },
 
   flash(msg) {
-    this.notice = msg;
-    this.renderStatus();
+    this.status('notice', `? ${esc(msg)}`);
     clearTimeout(this.noticeTimer);
-    this.noticeTimer = setTimeout(() => {
-      this.notice = null;
-      this.renderStatus();
-    }, 1500);
+    this.noticeTimer = setTimeout(() => this.statusKind === 'notice' && this.status(), 1800);
   },
 
-  async say(padId) {
-    const pad = app.profile.pads.find((p) => p.id === padId);
-    if (!pad) return;
-    this.speaking = padId;
+  async say(c) {
+    if (!c) return;
+    this.speaking = c.id;
     this.renderTiles();
+    this.status('speaking', `🔊 “${esc(c.phrase)}”`);
     if (app.access.vibrate) buzz([40, 60, 40]);
     let via = 'tts';
     try {
-      if (pad.clipId && (await playClip(app.engine.ctx, pad.clipId))) via = 'clip';
-      else await speak(pad.phrase, { rate: app.access.rate, voiceURI: app.access.voiceURI });
+      if (c.clipId && (await playClip(app.engine.ctx, c.clipId))) via = 'clip';
+      else await speak(c.phrase, { rate: app.access.rate, voiceURI: app.access.voiceURI });
     } catch (e) {
       log('playback failed, falling back to speech:', e.message);
-      await speak(pad.phrase, { rate: app.access.rate, voiceURI: app.access.voiceURI });
+      await speak(c.phrase, { rate: app.access.rate, voiceURI: app.access.voiceURI });
     }
-    log(`said "${pad.phrase}" (${via})`);
-    bus.dispatchEvent(new CustomEvent('phrase', { detail: { text: pad.phrase, padId, via, at: Date.now() } }));
-    if (this.speaking === padId) this.speaking = null;
-    if (app.screen === this) this.renderTiles();
+    log(`said "${c.phrase}" (${via})`);
+    bus.dispatchEvent(new CustomEvent('phrase', { detail: { text: c.phrase, commandId: c.id, pattern: patternText(c), via, at: Date.now() } }));
+    if (this.speaking === c.id) this.speaking = null;
+    if (app.screen === this) {
+      this.renderTiles();
+      if (this.statusKind === 'speaking') this.status();
+    }
   },
 
   onTap(sample, d) {
     if (!app.model) return null;
     const p = decide(app.model, sample.feats.vec, app.settings);
-    d.marker.label = p.status === 'pad' ? app.profile.pads.find((x) => x.id === p.label)?.short : p.status === 'ignored' ? 'ignore' : '?';
+    d.marker.label = p.status === 'pad' ? TAP_TYPES[p.label]?.label : p.status === 'ignored' ? 'ignore' : '?';
     d.marker.ok = p.status === 'pad' ? true : null;
-    this.ctl.tap({ label: p.label, status: p.status, t: d.onsetWall });
+    this.ctl.tap({ label: p.label, status: p.status, confidence: p.confidence, t: d.onsetWall });
     return { summary: { pred: p.label, status: p.status, confidence: p.confidence, distRatio: p.distRatio } };
   },
 };

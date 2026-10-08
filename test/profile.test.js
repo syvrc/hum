@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { WINDOW, preSamples } from '../src/audio/features.js';
 import {
-  NONE, newProfile, withFeatures, trainModel, decide, selfCheck, advise, alternativeType,
-  changePad, removePad, exportProfile, importProfile, hydrate, dehydrate, countFor, isReadyToCheck,
+  NONE, newProfile, withFeatures, trainModel, decide, selfCheck, advise, assignDefaultPhrases,
+  exportProfile, importProfile, hydrate, dehydrate, isReadyToCheck,
 } from '../src/profile.js';
-import { makePad } from '../src/pads.js';
+import { makePad, makeCommands, patternText } from '../src/pads.js';
 import { rng, noise, tap, TAP_CLASSES } from './synth.js';
 
 const SR = 48000;
@@ -27,84 +27,88 @@ function noneSample(r) {
   return withFeatures({ id: `n-${r()}`, padId: NONE, sr: SR, pre, channels: [w], accel: null, t: 0 });
 }
 
+// Palm and knuckle knocks from varying spots: alternate between two synthetic variants each.
+const SPECS = { palm: [TAP_CLASSES.palmLeft, TAP_CLASSES.palmRight], knuckle: [TAP_CLASSES.knuckleNear, TAP_CLASSES.knuckleFar] };
+
 function trainedProfile(seed = 1, withNone = true) {
   const r = rng(seed);
-  const p = newProfile('Test table', ['left:palm', 'right:palm', 'near:knuckle', 'far:knuckle']);
-  const specs = { 'left:palm': TAP_CLASSES.palmLeft, 'right:palm': TAP_CLASSES.palmRight, 'near:knuckle': TAP_CLASSES.knuckleNear, 'far:knuckle': TAP_CLASSES.knuckleFar };
-  for (const [id, spec] of Object.entries(specs)) for (let i = 0; i < 8; i++) p.samples.push(sampleOf(id, spec, r));
+  const p = newProfile('Test table');
+  for (const type of ['palm', 'knuckle']) for (let i = 0; i < 8; i++) p.samples.push(sampleOf(type, SPECS[type][i % 2], r));
   if (withNone) for (let i = 0; i < 8; i++) p.samples.push(noneSample(r));
-  return { p, r, specs };
+  return { p, r };
 }
 
-test('a trained profile classifies taps and ignores "not a command" sounds', () => {
-  const { p, r, specs } = trainedProfile(1);
-  assert.ok(isReadyToCheck(p));
-  const model = trainModel(p, SETTINGS);
-  const d = decide(model, sampleOf('near:knuckle', specs['near:knuckle'], r).feats.vec, SETTINGS);
-  assert.equal(d.status, 'pad');
-  assert.equal(d.label, 'near:knuckle');
-  const n = decide(model, noneSample(r).feats.vec, SETTINGS);
-  assert.equal(n.status, 'ignored');
-  assert.equal(n.rejected, true);
+test('a new profile has palm + knuckle sounds and 6 commands with default phrases', () => {
+  const p = assignDefaultPhrases(newProfile('x'));
+  assert.deepEqual(p.pads.map((x) => x.id), ['palm', 'knuckle']);
+  assert.deepEqual(p.commands.map((c) => c.id), ['palm1', 'knuckle1', 'palm2', 'knuckle2', 'palm3', 'knuckle3']);
+  assert.equal(p.commands[0].phrase, 'Yes');
+  assert.equal(p.commands[1].phrase, 'No');
+  assert.equal(patternText(p.commands[3]), '✊ ×2');
 });
 
-test('self-check reports pad accuracy, false triggers and separability', () => {
+test('a trained profile tells palm from knuckle and ignores "not a command" sounds', () => {
+  const { p, r } = trainedProfile(1);
+  assert.ok(isReadyToCheck(p));
+  const model = trainModel(p, SETTINGS);
+  const d = decide(model, sampleOf('knuckle', SPECS.knuckle[0], r).feats.vec, SETTINGS);
+  assert.equal(d.status, 'pad');
+  assert.equal(d.label, 'knuckle');
+  const n = decide(model, noneSample(r).feats.vec, SETTINGS);
+  assert.equal(n.status, 'ignored');
+});
+
+test('self-check reports accuracy, false triggers and separability', () => {
   const { p } = trainedProfile(2);
   const c = selfCheck(p, SETTINGS);
-  assert.equal(c.labels.at(-1), NONE);
-  assert.equal(c.padTotal, 32);
+  assert.deepEqual(c.labels, ['palm', 'knuckle', NONE]);
+  assert.equal(c.padTotal, 16);
   assert.equal(c.noneTotal, 8);
-  assert.ok(c.padAccuracy >= 0.9, `pad accuracy ${c.padAccuracy}`);
-  for (const id of p.pads.map((x) => x.id)) assert.ok(c.separability[id] > 0, `${id} separability ${c.separability[id]}`);
+  assert.ok(c.padAccuracy >= 0.9, `accuracy ${c.padAccuracy}`);
+  assert.ok(c.separability.palm > 0 && c.separability.knuckle > 0);
 });
 
 test('no model until two classes have examples', () => {
-  const p = newProfile('x', ['left:palm', 'right:palm']);
-  assert.equal(trainModel(p, SETTINGS), null);
+  assert.equal(trainModel(newProfile('x'), SETTINGS), null);
 });
 
-test('advice names confused pairs and offers one-tap fixes', () => {
-  const pads = ['left:palm', 'near:palm', 'far:knuckle'].map(makePad);
-  const loo = { labels: pads.map((x) => x.id), matrix: [[6, 2, 0], [3, 5, 0], [0, 0, 8]] };
-  const adv = advise(loo, pads);
+test('advice explains a palm/knuckle mix-up and offers a retrain', () => {
+  const pads = ['palm', 'knuckle'].map(makePad);
+  const adv = advise({ labels: ['palm', 'knuckle'], matrix: [[6, 2], [3, 5]] }, pads);
   assert.equal(adv.length, 1);
-  assert.match(adv[0].text, /LEFT · PALM and NEAR · PALM sound alike \(31% mixed up\)/);
-  const change = adv[0].fixes.find((f) => f.action === 'changeType');
-  assert.equal(change.type, 'knuckle'); // palm's most different sound
-  assert.ok(adv[0].fixes.some((f) => f.action === 'remove'));
+  assert.match(adv[0].text, /PALM and KNUCKLE sound alike \(31% mixed up\)/);
+  assert.deepEqual(adv[0].fixes.map((f) => f.action), ['retrain']);
 });
 
-test('alternative tap type skips types already used in that zone', () => {
-  const pads = ['right:palm', 'right:knuckle'].map(makePad);
-  assert.equal(alternativeType(pads, pads[0]), 'nail');
+test('old location-based tables are recognised as legacy', () => {
+  const stored = { id: 'old', name: 'Old', pads: [{ id: 'left:palm' }, { id: 'right:knuckle' }], samples: [] };
+  const p = hydrate(stored);
+  assert.equal(p.legacy, true);
+  assert.equal(p.commands.length, 0);
+  assert.equal(p.pads[0].label, 'LEFT · PALM');
 });
 
-test('changing or removing a pad drops its examples', () => {
-  const { p } = trainedProfile(3, false);
-  assert.ok(changePad(p, 'far:knuckle', 'far', 'nail'));
-  assert.equal(countFor(p, 'far:knuckle'), 0);
-  assert.equal(p.pads[3].label, 'FAR · NAIL');
-  assert.equal(changePad(p, 'far:nail', 'left', 'palm'), false); // already exists
-  removePad(p, 'far:nail');
-  assert.equal(p.pads.length, 3);
-});
-
-test('export → import round-trips a profile (as a new copy)', () => {
+test('export → import round-trips a profile (as a new copy) with its phrases', () => {
   const { p } = trainedProfile(4);
+  assignDefaultPhrases(p);
+  p.commands[2].phrase = 'Water please';
+  p.commands[2].clipId = 'clip-1';
   const json = JSON.parse(JSON.stringify(exportProfile(p)));
   const q = importProfile(json);
   assert.notEqual(q.id, p.id);
   assert.equal(q.samples.length, p.samples.length);
-  assert.deepEqual(q.pads.map((x) => x.label), p.pads.map((x) => x.label));
-  // int16 storage changes features only slightly
+  assert.equal(q.commands[2].phrase, 'Water please');
+  assert.equal(q.commands[2].clipId, undefined); // clips stay on the phone
   for (let i = 0; i < 20; i++) assert.ok(Math.abs(q.samples[0].feats.vec[i] - p.samples[0].feats.vec[i]) < 0.5);
   assert.throws(() => importProfile({ kind: 'something-else' }), /not a Hum profile/);
 });
 
-test('dehydrate → hydrate keeps custom pad fields and drops derived ones', () => {
-  const p = newProfile('x', ['left:palm']);
-  p.pads[0].phrase = 'I need water';
-  const stored = dehydrate(p);
-  assert.deepEqual(Object.keys(stored.pads[0]).sort(), ['id', 'phrase']);
-  assert.equal(hydrate(stored).pads[0].label, 'LEFT · PALM');
+test('dehydrate → hydrate keeps command settings', () => {
+  const p = newProfile('x');
+  p.commands[0].phrase = 'Hello';
+  p.commands[0].remote = 'next';
+  const q = hydrate(dehydrate(p));
+  assert.equal(q.commands[0].phrase, 'Hello');
+  assert.equal(q.commands[0].remote, 'next');
+  assert.equal(q.commands.length, makeCommands().length);
 });

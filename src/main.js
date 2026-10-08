@@ -23,9 +23,10 @@ import { lab, copyReport, sendDataset } from './screens/lab.js';
 import { access } from './screens/access.js';
 import { phrases } from './screens/phrases.js';
 import { remote } from './screens/remote.js';
+import { sos } from './screens/sos.js';
 import { warmUpSpeech } from './voice.js';
 
-app.screens = { home, wizard, lab, access, phrases, remote };
+app.screens = { home, wizard, lab, access, phrases, remote, sos };
 app.map = new TableMap($('#map'));
 app.scope = new Scope($('#scope'), app.engine);
 

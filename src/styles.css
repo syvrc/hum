@@ -218,14 +218,6 @@ input.text:focus { outline: 3px solid var(--cyan); outline-offset: 1px; }
 .access-status.preview { border-color: var(--amber); color: var(--amber); }
 .access-status.speaking { border-color: var(--signal); color: var(--signal); }
 .access-status.notice { border-color: var(--amber); color: var(--amber); }
-.tiles { display: grid; grid-template-columns: 1fr 1fr; grid-template-areas: 'far far' 'left right' 'near near'; gap: 10px; }
-.tiles.no-left .zone-right, .tiles.no-right .zone-left { grid-column: 1 / -1; }
-.zone { display: grid; gap: 10px; align-content: start; }
-.zone-far { grid-area: far; grid-auto-flow: column; grid-auto-columns: 1fr; }
-.zone-near { grid-area: near; grid-auto-flow: column; grid-auto-columns: 1fr; }
-.zone-left { grid-area: left; }
-.zone-right { grid-area: right; }
-.tiles.no-left .zone-right, .tiles.no-right .zone-left { grid-row: 2; }
 .tile { display: flex; flex-direction: column; justify-content: center; gap: 6px; min-height: 120px; padding: 14px; border-radius: 16px; border: 3px solid #3a4a46; background: #0c1413; color: #ffffff; }
 .tile-phrase { font: 700 30px/1.15 var(--sans); overflow-wrap: anywhere; }
 .tile-meta { font: 600 13px var(--mono); color: #b9ccc6; letter-spacing: 0.04em; }
@@ -248,3 +240,37 @@ input.text:focus { outline: 3px solid var(--cyan); outline-offset: 1px; }
 .remote-maps { display: grid; gap: 8px; margin-top: 10px; }
 .remote-map { display: grid; grid-template-columns: 96px 1fr; gap: 8px; align-items: center; }
 details.card summary { cursor: pointer; font-weight: 600; min-height: 32px; }
+
+/* --- Plan B: tap type × rhythm ------------------------------------------------- */
+.cmd-grid { display: grid; grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr)); gap: 10px; }
+.cmd-head { font: 600 15px var(--mono); letter-spacing: 0.08em; color: var(--muted); text-align: center; padding: 4px 0; }
+.tile-pattern { font: 700 22px var(--mono); color: #b9ccc6; }
+.tile.preview .tile-pattern, .tile.speaking .tile-pattern { color: inherit; }
+.access-status.counting { border-color: var(--cyan); color: var(--cyan); }
+.access-status.asking { border-color: var(--amber); color: var(--amber); }
+.answer-bar { display: block; height: 6px; margin-top: 10px; background: rgba(255, 181, 71, 0.2); border-radius: 3px; overflow: hidden; }
+.answer-bar i { display: block; height: 100%; background: var(--amber); animation: drain 4s linear forwards; }
+@keyframes drain { from { width: 100%; } to { width: 0; } }
+.pattern-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 10px 0; }
+.pattern-chip { display: inline-block; font: 700 22px var(--mono); text-align: center; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.pattern-chip.small { font-size: 14px; padding: 2px 8px; margin-right: 6px; }
+.tm-zone { fill: rgba(79, 216, 255, 0.04); stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 4 5; }
+.tm-count { fill: var(--text); font: 700 22px var(--mono); text-anchor: middle; }
+.tm-ripple.soft { stroke-width: 6; }
+.tm-ripple.sharp { stroke-width: 2; }
+.tm-pad.target .tm-pad-ring { stroke: var(--amber); stroke-width: 3; stroke-dasharray: none; }
+
+/* SOS screen on the phone: alternates red/black once per second (WCAG: < 3 flashes/s). */
+body.sos-active .topbar, body.sos-active .foot { display: none; }
+.sos-screen { position: fixed; inset: 0; z-index: 25; display: grid; place-content: center; gap: 14px; padding: 24px; text-align: center; color: #fff; background: #000; }
+.sos-screen.countdown { background: #7a0000; }
+.sos-screen.alarm { background: #b00000; animation: sosflash 1s steps(1, end) infinite; }
+.sos-screen.acked { background: #04331f; }
+@keyframes sosflash { 50% { background: #000; } }
+.sos-title { font: 700 min(30vw, 160px)/1 var(--sans); letter-spacing: 0.05em; }
+.sos-title.calm { color: var(--signal); }
+.sos-text { font: 700 34px/1.2 var(--sans); margin: 0; }
+.sos-count { font-size: 96px; font-weight: 600; line-height: 1; }
+.sos-small { font-size: 18px; margin: 0; }
+.sos-cancel { background: #fff; color: #000; border-color: #fff; min-height: 88px; font-size: 30px; }
+@media (prefers-reduced-motion: reduce) { .sos-screen.alarm { animation: none; } }

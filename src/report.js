@@ -45,7 +45,10 @@ export function buildReport(app) {
     settings: app.settings,
     profile: p && {
       name: p.name,
-      pads: p.pads.map((x) => x.id),
+      legacy: p.legacy || false,
+      sounds: p.pads.map((x) => x.id),
+      commands: (p.commands || []).map((c) => `${c.id}: ${c.phrase}${c.clipId ? ' (clip)' : ''}`),
+      access: app.access,
       perPad: Object.fromEntries([...p.pads.map((x) => x.id), NONE].map((id) => [id, samples.filter((s) => s.padId === id).length])),
       calibration: p.calibration,
       check: p.check,
@@ -55,9 +58,12 @@ export function buildReport(app) {
     },
     test: test && {
       ...test.summary,
-      latency: latencyStats(test.results),
-      rows: test.results.map((r) => [r.truth, r.pred, r.status, round(r.confidence), round(r.distRatio, 1), Math.round(r.latencyMs ?? -1), round(r.peakDb, 1), r.sample?.feats?.info.clipped ?? null]),
-      rowFormat: ['truth', 'pred', 'status', 'conf', 'distRatio', 'latencyMs', 'peakDb', 'clippedSamples'],
+      patternLatency: latencyStats(test.results),
+      knockLatency: latencyStats(test.taps || []),
+      patterns: test.results.map((r) => [r.truth, r.pred, r.knocks, r.why || '', Math.round(r.latencyMs ?? -1)]),
+      patternFormat: ['truth', 'pred', 'knocks', 'why', 'decidedMsAfterLastKnock'],
+      knocks: (test.taps || []).map((k) => [k.truth, k.pred, round(k.confidence), round(k.distRatio, 1), Math.round(k.latencyMs ?? -1), round(k.peakDb, 1), k.sample?.feats?.info.clipped ?? null]),
+      knockFormat: ['truth', 'pred', 'conf', 'distRatio', 'latencyMs', 'peakDb', 'clippedSamples'],
     },
     lastTap: app.lastTap,
     log: logLines().slice(-60),
@@ -68,9 +74,9 @@ export function buildDataset(app) {
   const p = app.profile;
   const tapRow = (set, s, extra = {}) => ({ set, truth: s.padId, sr: s.sr, pre: s.pre, accel: s.accel, audio: s.channels.map(f32ToB64), ...extra });
   const taps = (p?.samples || []).map((s) => tapRow('train', s));
-  for (const r of p?.lastTest?.results || []) {
-    if (!r.sample) continue;
-    taps.push(tapRow('test', r.sample, { pred: r.pred, status: r.status, confidence: round(r.confidence, 3), distRatio: round(r.distRatio, 2), latencyMs: Math.round(r.latencyMs ?? -1) }));
+  for (const k of p?.lastTest?.taps || []) {
+    if (!k.sample) continue;
+    taps.push(tapRow('test', { ...k.sample, padId: k.truth }, { pred: k.pred, status: k.status, confidence: round(k.confidence, 3), distRatio: round(k.distRatio, 2), latencyMs: Math.round(k.latencyMs ?? -1) }));
   }
   return {
     kind: 'hum-dataset',

@@ -138,6 +138,13 @@ export class Link extends EventTarget {
     return false;
   }
 
+  /** Drop queued messages of a type (e.g. an SOS that was cancelled before it could be sent). */
+  dropQueued(type) {
+    const before = this.outbox.length;
+    this.outbox = this.outbox.filter((m) => m.type !== type);
+    return before - this.outbox.length;
+  }
+
   setStatus(s) {
     if (s === this.status) return;
     this.status = s;
