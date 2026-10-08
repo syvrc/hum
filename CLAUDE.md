@@ -10,7 +10,8 @@ Full spec: docs/BRIEF.md (verbatim brief — re-read the relevant section before
 Current phase: 4 — Companion + Desk Remote. DONE in code. Phases 0, 1, 2, 4 code-complete and browser-verified with
 console-injected synthetic audio (38 unit tests). Phase 3 (Tier 2: triple, SOS, phone-moved, online learning) is
 DELIBERATELY NOT STARTED: brief says never start a tier until the previous one works on the user's phone.
-NOTHING verified on a real phone yet (user away from phone). Vercel: user is importing (URL not yet known).
+NOTHING verified on a real phone yet (user away from phone). LIVE: https://hum-navy.vercel.app (auto-deploys from main;
+companion at /companion.html — both verified loading, worklet served, PeerJS room claimed).
 Next: user's phone session → wizard → Access Pad → accuracy test → "Copy report" → apply the §6 gate (≥85% go /
 70–85% reduce / <70% Plan B: tap type × rhythm) → Phase 3 → Phase 5 polish → Phase 7 ship kit.
 Decisions: confirm = double-knock ANYWHERE (preview already chose the pad; needs only onset timing). Every output
@@ -26,7 +27,7 @@ with a MediaStreamDestination playing synthetic taps (test-only, never app code)
 - Dev over Wi-Fi (fallback, self-signed HTTPS): `npm run dev:wifi` → phone opens https://<laptop-ip>:5173
 - Unit tests (pure DSP/ML in Node, synthetic taps): `npm test`
 - Production build / local preview: `npm run build` / `npm run preview`
-- Deploy: commit → `git push` (main) → Vercel auto-deploys
+- Deploy: commit → `git push` (main) → Vercel auto-deploys to https://hum-navy.vercel.app
 - Dev-only: the phone's "Send to laptop" button writes datasets to `data/` (gitignored) for offline analysis
 
 ## Non-negotiable rules (brief §9)

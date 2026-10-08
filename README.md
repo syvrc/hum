@@ -2,6 +2,8 @@
 
 **Turn any table into a touch surface.** Lay an Android phone flat on a table, teach it your knocks in 30 seconds, and every spot and kind of tap on the table becomes a button — using only the phone's microphone and on-device machine learning. No extra hardware, no camera, and the audio never leaves the phone.
 
+**Live:** https://hum-navy.vercel.app (phone app, Android Chrome) · https://hum-navy.vercel.app/companion.html (laptop companion)
+
 > Work in progress — built during **GENESIZ 2026 AppForge** ("The Impossible App").
 > Hum is an **assistive aid, not a medical device**.
 
